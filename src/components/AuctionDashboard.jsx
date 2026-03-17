@@ -11,6 +11,7 @@ class AuctionDashboard extends Component {
             bidHistory: [],
             serverTimeOffset: 0,
             soldCelebration: null,
+            isProcessingSold: false,
         };
         this.timerInterval = null;
         this.roomRef = db && this.props.roomCode ? ref(db, `rooms/${this.props.roomCode}`) : null;
@@ -30,6 +31,21 @@ class AuctionDashboard extends Component {
             this.setState({ serverTimeOffset: snap.val() || 0 });
         });
     };
+
+    componentDidUpdate(prevProps, prevState) {
+        // Auto-trigger sold when timer reaches 0
+        if (
+            prevState.localTimer > 0 &&
+            this.state.localTimer === 0 &&
+            this.state.roomData &&
+            this.state.roomData.status === 'active' &&
+            !this.state.isProcessingSold
+        ) {
+            this.setState({ isProcessingSold: true }, () => {
+                setTimeout(() => this.handleSold(), 2000);
+            });
+        }
+    }
 
     componentWillUnmount() {
         clearInterval(this.timerInterval);
@@ -61,6 +77,14 @@ class AuctionDashboard extends Component {
                 this.setState({ localTimer: 20 });
             }
         }, 1000);
+    };
+
+    // Check if a team can no longer bid (full squad or insufficient purse)
+    isTeamInactive = (team, minBidPrice) => {
+        const playerCount = team.players ? team.players.length : 0;
+        if (playerCount >= 18) return true;
+        if (team.purse < minBidPrice) return true;
+        return false;
     };
 
     handleBid = async (team) => {
@@ -121,6 +145,15 @@ class AuctionDashboard extends Component {
         // Random selection logic if index is -1 (trigger for random)
         if (index === -1) {
             const { roomData } = this.state;
+
+            // Check if all teams are inactive (full squad or broke)
+            const minBasePrice = Math.min(...this.props.players.map(p => p.basePrice));
+            const allTeamsInactive = roomData.teams.every(t => this.isTeamInactive(t, minBasePrice));
+            if (allTeamsInactive) {
+                await update(this.roomRef, { status: 'finished' });
+                return;
+            }
+
             const availableIndices = this.props.players
                 .map((p, i) => ({ ...p, originalIndex: i }))
                 .filter(p => {
@@ -143,6 +176,9 @@ class AuctionDashboard extends Component {
         const { serverTimeOffset } = this.state;
         const now = Date.now() + serverTimeOffset;
         const endTime = now + 20000; // 20s from synchronized now
+
+        // Reset processing flag for next round
+        this.setState({ isProcessingSold: false });
 
         try {
             await update(this.roomRef, {
@@ -280,13 +316,6 @@ class AuctionDashboard extends Component {
                             </div>
                         </div>
                     )}
-
-                    {/* Admin Controls */}
-                    {roomData.status === 'waiting' && (
-                        <button className="btn btn-primary mt-auto w-full py-3" onClick={() => this.startAuctionForPlayer(-1)}>
-                            Start Next Auction
-                        </button>
-                    )}
                 </div>
 
                 {/* Center: Bid Control */}
@@ -301,9 +330,9 @@ class AuctionDashboard extends Component {
                         </div>
                         {localTimer === 0 && roomData.status === 'active' && (
                             <div className="absolute inset-0 bg-dark opacity-90 rounded-lg flex items-center justify-center z-10 animate-fade-in" style={{ opacity: 0.95 }}>
-                                <button className="btn btn-primary px-10 py-5 text-xl tracking-wider w-full mx-4" onClick={this.handleSold}>
-                                    CONFIRM SOLD / NEXT
-                                </button>
+                                <div className="text-2xl font-black text-accent tracking-wider animate-pulse">
+                                    {this.state.isProcessingSold ? 'PROCESSING...' : 'TIME UP!'}
+                                </div>
                             </div>
                         )}
                     </div>
@@ -324,25 +353,25 @@ class AuctionDashboard extends Component {
                         <div className="mt-8 flex-1 flex flex-col justify-center min-h-0">
                             <div className="flex flex-wrap gap-3 justify-center overflow-y-auto max-h-[300px] p-2 scrollable-panel">
                                 {teams.map(team => {
-                                    // If joiner (not host), only show their own team's button
-                                    if (!this.props.isHost && team.id !== this.props.myTeamId) return null;
+                                    // Every player (host or joiner) only sees their own team's bid button
+                                    if (team.id !== this.props.myTeamId) return null;
 
+                                    const currentBidPrice = roomData.currentBid || player.basePrice;
+                                    const isInactive = this.isTeamInactive(team, currentBidPrice);
                                     const isSquadFull = team.players && team.players.length >= 18;
                                     const isHighestBidder = roomData.highestBidderId === team.id;
                                     
-                                    // Smaller buttons if many teams
-                                    const manyTeams = teams.length > 4;
-                                    const btnClass = manyTeams ? "btn px-4 py-3 text-sm min-w-[150px]" : "btn px-8 py-4 text-lg min-w-[200px] sm:min-w-[280px]";
+                                    const btnClass = "btn px-8 py-4 text-lg min-w-[200px] sm:min-w-[280px]";
 
                                     return (
                                         <button
                                             key={team.id}
-                                            className={`${btnClass} font-bold flex-shrink-0 ${isHighestBidder ? 'btn-outline' : 'btn-primary'}`}
+                                            className={`${btnClass} font-bold flex-shrink-0 ${isHighestBidder ? 'btn-outline' : isInactive ? 'btn-outline' : 'btn-primary'}`}
                                             onClick={() => this.handleBid(team)}
-                                            disabled={roomData.status !== 'active' || localTimer === 0 || isSquadFull || isHighestBidder}
-                                            style={isHighestBidder ? { opacity: 0.6 } : {}}
+                                            disabled={roomData.status !== 'active' || localTimer === 0 || isInactive || isHighestBidder}
+                                            style={isHighestBidder || isInactive ? { opacity: 0.6 } : {}}
                                         >
-                                            {isSquadFull ? 'FULL' : isHighestBidder ? `${team.name.toUpperCase()} — LEADING` : `BID FOR ${team.name.toUpperCase()}`}
+                                            {isSquadFull ? 'SQUAD FULL' : isInactive ? 'PURSE EXHAUSTED' : isHighestBidder ? `${team.name.toUpperCase()} — LEADING` : `BID FOR ${team.name.toUpperCase()}`}
                                         </button>
                                     );
                                 })}
@@ -372,27 +401,34 @@ class AuctionDashboard extends Component {
                 <div className="glass p-6 scrollable-panel mobile-order-3">
                     <h3 className="mb-6 text-center text-accent tracking-widest font-bold text-lg">TEAMS PURSE</h3>
                     <div className="flex flex-col gap-4">
-                        {teams.map(team => (
-                            <div key={team.id} className="bg-panel p-4 rounded-lg border border-white border-opacity-5 hover:border-accent hover:border-opacity-30 transition-all">
-                                <div className="flex justify-between mb-2 items-center">
-                                    <span className="font-bold text-lg">{team.name}</span>
-                                    <span className="text-accent font-black text-xl">{team.purse.toFixed(1)} <span className="text-sm">Cr</span></span>
-                                </div>
-                                <div className={`text-xs font-semibold uppercase tracking-wide mb-3 ${team.players && team.players.length >= 18 ? 'text-danger' : 'text-secondary'}`}>
-                                    Squad: {team.players ? team.players.length : 0} / 18
-                                </div>
-                                {team.players && team.players.length > 0 && (
-                                    <div className="border-t border-white border-opacity-10 pt-3 flex flex-col gap-2">
-                                        {team.players.map((p, i) => (
-                                            <div key={i} className="flex justify-between text-xs items-center p-1 hover:bg-white hover:bg-opacity-5 rounded">
-                                                <span className="font-medium">{p.name}</span>
-                                                <span className="text-accent font-bold bg-dark px-2 py-1 rounded">{p.soldPrice} Cr</span>
-                                            </div>
-                                        ))}
+                        {teams.map(team => {
+                            const minBasePrice = Math.min(...this.props.players.map(p => p.basePrice));
+                            const inactive = this.isTeamInactive(team, minBasePrice);
+                            return (
+                                <div key={team.id} className={`bg-panel p-4 rounded-lg border transition-all ${inactive ? 'border-danger border-opacity-30 opacity-60' : 'border-white border-opacity-5 hover:border-accent hover:border-opacity-30'}`}>
+                                    <div className="flex justify-between mb-2 items-center">
+                                        <span className="font-bold text-lg">
+                                            {team.name}
+                                            {inactive && <span className="text-xs bg-danger text-white px-2 py-1 rounded ml-2 align-middle">RESTING</span>}
+                                        </span>
+                                        <span className="text-accent font-black text-xl">{team.purse.toFixed(1)} <span className="text-sm">Cr</span></span>
                                     </div>
-                                )}
-                            </div>
-                        ))}
+                                    <div className={`text-xs font-semibold uppercase tracking-wide mb-3 ${team.players && team.players.length >= 18 ? 'text-danger' : 'text-secondary'}`}>
+                                        Squad: {team.players ? team.players.length : 0} / 18
+                                    </div>
+                                    {team.players && team.players.length > 0 && (
+                                        <div className="border-t border-white border-opacity-10 pt-3 flex flex-col gap-2">
+                                            {team.players.map((p, i) => (
+                                                <div key={i} className="flex justify-between text-xs items-center p-1 hover:bg-white hover:bg-opacity-5 rounded">
+                                                    <span className="font-medium">{p.name}</span>
+                                                    <span className="text-accent font-bold bg-dark px-2 py-1 rounded">{p.soldPrice} Cr</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
                     </div>
                 </div>
             </div>

@@ -25,6 +25,7 @@ class ComputerAuction extends Component {
       bidHistory: [],
       bidPopup: null,
       soldCelebration: null,
+      isProcessingSold: false,
     };
     this.timerInterval = null;
     this.aiTimeout = null;
@@ -34,6 +35,14 @@ class ComputerAuction extends Component {
     clearInterval(this.timerInterval);
     clearTimeout(this.aiTimeout);
   }
+
+  // Check if a team can no longer bid (full squad or insufficient purse)
+  isTeamInactive = (team, minBidPrice) => {
+    const playerCount = team.players ? team.players.length : 0;
+    if (playerCount >= 18) return true;
+    if (team.purse < minBidPrice) return true;
+    return false;
+  };
 
   getNextPlayerIndex = () => {
     const { players, soldPlayerNames } = this.state;
@@ -47,13 +56,24 @@ class ComputerAuction extends Component {
   };
 
   startNextAuction = () => {
+    const { userTeam, aiTeam, players } = this.state;
+
+    // Check if both teams are inactive
+    const minBasePrice = Math.min(...players.map(p => p.basePrice));
+    const userInactive = this.isTeamInactive(userTeam, minBasePrice);
+    const aiInactive = this.isTeamInactive(aiTeam, minBasePrice);
+    if (userInactive && aiInactive) {
+      this.setState({ status: 'finished' });
+      return;
+    }
+
     const nextIndex = this.getNextPlayerIndex();
     if (nextIndex === -1) {
       this.setState({ status: 'finished' });
       return;
     }
 
-    const player = this.state.players[nextIndex];
+    const player = players[nextIndex];
     this.setState({
       currentPlayerIndex: nextIndex,
       currentBid: player.basePrice,
@@ -63,6 +83,7 @@ class ComputerAuction extends Component {
       timer: 15,
       aiThinking: false,
       bidHistory: [],
+      isProcessingSold: false,
     }, () => {
       this.startTimer();
       this.scheduleAiBid();
@@ -77,6 +98,11 @@ class ComputerAuction extends Component {
         if (newTimer <= 0) {
           clearInterval(this.timerInterval);
           clearTimeout(this.aiTimeout);
+          // Auto-trigger sold after 2s delay
+          if (!prev.isProcessingSold) {
+            setTimeout(() => this.handleSold(), 2000);
+            return { timer: 0, isProcessingSold: true };
+          }
           return { timer: 0 };
         }
         return { timer: newTimer };
@@ -156,21 +182,20 @@ class ComputerAuction extends Component {
   };
 
   handleUserBid = () => {
-    const { userTeam, currentBid, highestBidderId, timer, status, players, currentPlayerIndex } = this.state;
+    const { userTeam, currentBid, highestBidderId, timer, status } = this.state;
     if (status !== 'active' || timer <= 0) return;
     if (highestBidderId === userTeam.id) return; // Already leading
 
     const increment = 1;
     const newBid = highestBidderId ? currentBid + increment : currentBid;
 
-    if (userTeam.purse < newBid) {
-      alert("You don't have enough purse!");
-      return;
-    }
-
-    const userPlayersCount = userTeam.players ? userTeam.players.length : 0;
-    if (userPlayersCount >= 18) {
-      alert("Your squad is full (18 players)!");
+    // Check if team is inactive (purse exhausted or squad full)
+    if (this.isTeamInactive(userTeam, newBid)) {
+      if (userTeam.players && userTeam.players.length >= 18) {
+        alert("Your squad is full (18 players)!");
+      } else {
+        alert("You don't have enough purse!");
+      }
       return;
     }
 
@@ -334,11 +359,6 @@ class ComputerAuction extends Component {
             </div>
           )}
 
-          {status === 'waiting' && (
-            <button className="btn btn-primary mt-auto w-full py-3" onClick={this.startNextAuction}>
-              Start Next Auction
-            </button>
-          )}
         </div>
 
         {/* Center: Bid Control */}
@@ -364,9 +384,9 @@ class ComputerAuction extends Component {
 
             {timer === 0 && status === 'active' && (
               <div className="absolute inset-0 rounded-lg flex items-center justify-center z-10 animate-fade-in" style={{ background: 'rgba(5,5,8,0.95)' }}>
-                <button className="btn btn-primary px-10 py-5 text-xl tracking-wider w-full mx-4" onClick={this.handleSold}>
-                  {highestBidderId ? `SOLD TO ${highestBidderName}!` : 'UNSOLD — NEXT'}
-                </button>
+                <div className="text-2xl font-black text-accent tracking-wider animate-pulse">
+                  {this.state.isProcessingSold ? 'PROCESSING...' : 'TIME UP!'}
+                </div>
               </div>
             )}
           </div>
@@ -385,17 +405,26 @@ class ComputerAuction extends Component {
             )}
 
             <div className="mt-10 flex flex-wrap gap-4 justify-center">
-              <button
-                className={`btn px-8 py-4 text-lg font-bold min-w-[280px] ${isUserLeading ? 'btn-outline opacity-60' : 'btn-primary'}`}
-                onClick={this.handleUserBid}
-                disabled={status !== 'active' || timer === 0 || isUserLeading || (userTeam.players && userTeam.players.length >= 18)}
-              >
-                {userTeam.players && userTeam.players.length >= 18
-                  ? 'SQUAD FULL (MAX 18)'
-                  : isUserLeading
-                    ? `${userTeam.name.toUpperCase()} — LEADING`
-                    : `BID FOR ${userTeam.name.toUpperCase()} (+1 Cr)`}
-              </button>
+              {(() => {
+                const currentBidPrice = currentBid || players[currentPlayerIndex].basePrice;
+                const userInactive = this.isTeamInactive(userTeam, currentBidPrice);
+                const isSquadFull = userTeam.players && userTeam.players.length >= 18;
+                return (
+                  <button
+                    className={`btn px-8 py-4 text-lg font-bold min-w-[280px] ${isUserLeading ? 'btn-outline opacity-60' : userInactive ? 'btn-outline opacity-60' : 'btn-primary'}`}
+                    onClick={this.handleUserBid}
+                    disabled={status !== 'active' || timer === 0 || isUserLeading || userInactive}
+                  >
+                    {isSquadFull
+                      ? 'SQUAD FULL (MAX 18)'
+                      : userInactive
+                        ? 'PURSE EXHAUSTED'
+                        : isUserLeading
+                          ? `${userTeam.name.toUpperCase()} — LEADING`
+                          : `BID FOR ${userTeam.name.toUpperCase()} (+1 Cr)`}
+                  </button>
+                );
+              })()}
             </div>
           </div>
 
@@ -421,29 +450,34 @@ class ComputerAuction extends Component {
         <div className="glass p-6 scrollable-panel mobile-order-3">
           <h3 className="mb-6 text-center text-accent tracking-widest font-bold text-lg">TEAMS PURSE</h3>
           <div className="flex flex-col gap-4">
-            {teams.map(team => (
-              <div key={team.id} className="bg-panel p-4 rounded-lg" style={{ border: '1px solid rgba(255,255,255,0.05)' }}>
-                <div className="flex justify-between mb-2 items-center">
-                  <span className="font-bold text-lg">
-                    {team.name} {team.id === 2 && <span className="text-xs text-success">🤖 AI</span>}
-                  </span>
-                  <span className="text-accent font-black text-xl">{team.purse.toFixed(1)} <span className="text-sm">Cr</span></span>
-                </div>
-                <div className={`text-xs font-semibold uppercase tracking-wide mb-3 ${team.players && team.players.length >= 18 ? 'text-danger' : 'text-secondary'}`}>
-                  Squad: {team.players ? team.players.length : 0} / 18
-                </div>
-                {team.players && team.players.length > 0 && (
-                  <div className="border-t pt-3 flex flex-col gap-2" style={{ borderColor: 'rgba(255,255,255,0.1)' }}>
-                    {team.players.map((p, i) => (
-                      <div key={i} className="flex justify-between text-xs items-center p-1 rounded">
-                        <span className="font-medium">{p.name}</span>
-                        <span className="text-accent font-bold bg-dark px-2 py-1 rounded">{p.soldPrice} Cr</span>
-                      </div>
-                    ))}
+            {teams.map(team => {
+              const minBasePrice = Math.min(...players.map(p => p.basePrice));
+              const inactive = this.isTeamInactive(team, minBasePrice);
+              return (
+                <div key={team.id} className={`bg-panel p-4 rounded-lg border transition-all ${inactive ? 'border-danger border-opacity-30 opacity-60' : ''}`} style={!inactive ? { border: '1px solid rgba(255,255,255,0.05)' } : {}}>
+                  <div className="flex justify-between mb-2 items-center">
+                    <span className="font-bold text-lg">
+                      {team.name} {team.id === 2 && <span className="text-xs text-success">🤖 AI</span>}
+                      {inactive && <span className="text-xs bg-danger text-white px-2 py-1 rounded ml-2 align-middle">RESTING</span>}
+                    </span>
+                    <span className="text-accent font-black text-xl">{team.purse.toFixed(1)} <span className="text-sm">Cr</span></span>
                   </div>
-                )}
-              </div>
-            ))}
+                  <div className={`text-xs font-semibold uppercase tracking-wide mb-3 ${team.players && team.players.length >= 18 ? 'text-danger' : 'text-secondary'}`}>
+                    Squad: {team.players ? team.players.length : 0} / 18
+                  </div>
+                  {team.players && team.players.length > 0 && (
+                    <div className="border-t pt-3 flex flex-col gap-2" style={{ borderColor: 'rgba(255,255,255,0.1)' }}>
+                      {team.players.map((p, i) => (
+                        <div key={i} className="flex justify-between text-xs items-center p-1 rounded">
+                          <span className="font-medium">{p.name}</span>
+                          <span className="text-accent font-bold bg-dark px-2 py-1 rounded">{p.soldPrice} Cr</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
