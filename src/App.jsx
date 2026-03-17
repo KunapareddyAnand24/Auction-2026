@@ -6,6 +6,8 @@ import AuctionDashboard from './components/AuctionDashboard';
 import ResultsPage from './components/ResultsPage';
 import ModeSelector from './components/ModeSelector';
 import ComputerAuction from './components/ComputerAuction';
+import TransferWindow from './components/TransferWindow';
+import UserProfile from './components/UserProfile';
 import { ref, onValue } from 'firebase/database';
 import { db, auth } from './firebase';
 import emailjs from '@emailjs/browser';
@@ -358,8 +360,16 @@ class App extends Component {
           if (this.state.view === 'room') {
             this.setState({ view: 'auction' });
           }
-        } else if (data.status === 'finished') {
+        } else if (data.status === 'transfer') {
           if (this.state.view === 'auction') {
+            this.setState({ view: 'transfer' });
+          }
+        } else if (data.status === 'selection') {
+          if (this.state.view === 'transfer') {
+            this.setState({ view: 'selection' });
+          }
+        } else if (data.status === 'finished') {
+          if (this.state.view === 'selection' || this.state.view === 'auction') {
             this.setState({ view: 'results' });
           }
         }
@@ -410,6 +420,8 @@ class App extends Component {
             setView={this.setView}
           />
         );
+      case 'profile':
+        return <UserProfile />;
       case 'auction':
         return (
           <AuctionDashboard
@@ -421,8 +433,25 @@ class App extends Component {
             setView={this.setView}
           />
         );
+      case 'transfer':
+        return (
+          <TransferWindow
+            roomCode={roomCode}
+            myTeamId={this.state.myTeamId}
+            setView={this.setView}
+          />
+        );
+      case 'selection':
+        return (
+          <ResultsPage
+            roomCode={roomCode}
+            teams={teams}
+            myTeamId={this.state.myTeamId}
+            setView={this.setView}
+          />
+        );
       case 'results':
-        return <ResultsPage teams={teams} myTeamId={this.state.myTeamId} setView={this.setView} />;
+        return <ResultsPage roomCode={roomCode} teams={teams} myTeamId={this.state.myTeamId} setView={this.setView} />;
       default:
         return <LandingPage setView={this.setView} />;
     }
@@ -462,6 +491,12 @@ class App extends Component {
                   ROOM: <span className="text-accent">{this.state.roomCode}</span>
                 </div>
               )}
+              <button
+                className="btn btn-outline px-4 py-2 text-xs font-bold"
+                onClick={() => this.setView('profile')}
+              >
+                PROFILE
+              </button>
               <div className="text-secondary text-sm hidden" style={{ display: window.innerWidth > 768 ? 'block' : 'none' }}>
                 Manager: <span className="text-accent font-bold">{this.state.user}</span>
               </div>

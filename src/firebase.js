@@ -2,6 +2,7 @@ import { initializeApp } from "firebase/app";
 import { getDatabase } from "firebase/database";
 import { getAnalytics } from "firebase/analytics";
 import { getAuth } from "firebase/auth";
+import { getFirestore } from "firebase/firestore";
 // Configured with user's project keys
 const firebaseConfig = {
   apiKey: "AIzaSyD_HgWQilUyiuEpkabOucQB8o1vBtrU3Gw",
@@ -23,9 +24,10 @@ try {
   auth = getAuth(app);
   db = getDatabase(app);
   analytics = getAnalytics(app);
+  const firestore = getFirestore(app);
   console.log("Firebase initialized successfully");
 } catch (error) {
   console.error("Firebase initialization failed:", error);
 }
 
-export { auth, db, analytics };
+export { auth, db, analytics, firestore };

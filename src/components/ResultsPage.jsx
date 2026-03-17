@@ -1,99 +1,101 @@
 import React, { Component } from 'react';
+import { ref, onValue, update } from 'firebase/database';
+import { db, firestore, auth } from '../firebase';
+import { collection, addDoc } from 'firebase/firestore';
 
 class ResultsPage extends Component {
     state = {
-        // Track selections per team: { teamId: { xi: [playerId, ...], impact: [playerId, ...] } }
-        teamSelections: {},
-        currentSelectingTeamId: null,
-        selectionMode: 'xi', // 'xi' or 'impact'
+        // Track selections per team: { xi: [playerId, ...], impact: [playerId, ...], ready: true/false }
+        mySelection: { xi: [], impact: [], ready: false },
+        roomData: null,
         matchPrediction: null,
-        allTeamsReady: false,
     };
 
     componentDidMount() {
-        // Auto set first team as current
-        const { teams } = this.props;
-        if (teams && teams.length > 0) {
-            const initial = {};
-            teams.forEach(t => { initial[t.id] = { xi: [], impact: [] }; });
-            this.setState({ teamSelections: initial, currentSelectingTeamId: teams[0].id });
+        if (db && this.props.roomCode) {
+            this.listenToRoom();
         }
     }
 
-    togglePlayer = (teamId, playerId) => {
-        const { selectionMode, teamSelections } = this.state;
-        const sel = teamSelections[teamId] || { xi: [], impact: [] };
+    listenToRoom = () => {
+        const roomRef = ref(db, `rooms/${this.props.roomCode}`);
+        this.roomListener = onValue(roomRef, (snapshot) => {
+            const data = snapshot.val();
+            if (data) {
+                this.setState({ roomData: data });
+                
+                // Sync my selection if it exists in DB
+                if (data.selections && data.selections[this.props.myTeamId]) {
+                    this.setState({ mySelection: data.selections[this.props.myTeamId] });
+                }
+            }
+        });
+    };
+
+    componentWillUnmount() {
+        if (this.roomListener) this.roomListener();
+    }
+
+    togglePlayer = (playerId) => {
+        const { mySelection, selectionMode } = this.state;
+        const sel = { ...mySelection };
 
         if (selectionMode === 'xi') {
             if (sel.xi.includes(playerId)) {
-                // Remove from XI
-                const updated = { ...sel, xi: sel.xi.filter(id => id !== playerId) };
-                // Also remove from impact if was there
-                updated.impact = updated.impact.filter(id => id !== playerId);
-                this.setState({ teamSelections: { ...teamSelections, [teamId]: updated } });
+                sel.xi = sel.xi.filter(id => id !== playerId);
+                sel.impact = sel.impact.filter(id => id !== playerId);
             } else {
                 if (sel.xi.length >= 11) {
                     alert("You can only select 11 players for Playing XI!");
                     return;
                 }
-                this.setState({ teamSelections: { ...teamSelections, [teamId]: { ...sel, xi: [...sel.xi, playerId] } } });
+                sel.xi = [...sel.xi, playerId];
             }
         } else {
-            // Impact player mode — must be in XI first
             if (!sel.xi.includes(playerId)) {
                 alert("Player must be in Playing XI first!");
                 return;
             }
             if (sel.impact.includes(playerId)) {
-                this.setState({ teamSelections: { ...teamSelections, [teamId]: { ...sel, impact: sel.impact.filter(id => id !== playerId) } } });
+                sel.impact = sel.impact.filter(id => id !== playerId);
             } else {
                 if (sel.impact.length >= 1) {
                     alert("You can only select 1 Impact Player!");
                     return;
                 }
-                this.setState({ teamSelections: { ...teamSelections, [teamId]: { ...sel, impact: [...sel.impact, playerId] } } });
+                sel.impact = [...sel.impact, playerId];
             }
         }
+
+        // Sync to Firebase
+        const selectionRef = ref(db, `rooms/${this.props.roomCode}/selections/${this.props.myTeamId}`);
+        update(selectionRef, sel);
     };
 
-    confirmTeamSelection = (teamId) => {
-        const { teams } = this.props;
-        const { teamSelections } = this.state;
-        const sel = teamSelections[teamId];
-
-        if (!sel || sel.xi.length !== 11) {
-            alert("Please select exactly 11 players for Playing XI!");
+    confirmSelection = () => {
+        const { mySelection } = this.state;
+        if (mySelection.xi.length !== 11) {
+            alert("Please select exactly 11 players!");
             return;
         }
-        if (sel.impact.length !== 1) {
-            alert("Please select exactly 1 Impact Player!");
+        if (mySelection.impact.length !== 1) {
+            alert("Please select 1 Impact Player!");
             return;
         }
 
-        // Move to next team
-        const currentIndex = teams.findIndex(t => t.id === teamId);
-        if (currentIndex < teams.length - 1) {
-            this.setState({
-                currentSelectingTeamId: teams[currentIndex + 1].id,
-                selectionMode: 'xi',
-            });
-        } else {
-            // All teams done
-            this.setState({ allTeamsReady: true });
-        }
+        const selectionRef = ref(db, `rooms/${this.props.roomCode}/selections/${this.props.myTeamId}`);
+        update(selectionRef, { ...mySelection, ready: true });
     };
 
     analyzeMatch = () => {
-        const { teams } = this.props;
-        const { teamSelections } = this.state;
+        const { roomData } = this.state;
+        if (!roomData || !roomData.teams) return;
 
-        if (teams.length < 2) return;
-
-        const teamScores = teams.map(team => {
-            const sel = teamSelections[team.id] || { xi: [], impact: [] };
+        const teamScores = roomData.teams.map(team => {
+            const sel = roomData.selections?.[team.id] || { xi: [], impact: [] };
             const xiPlayers = (team.players || []).filter(p => sel.xi.includes(p.id));
             const impactPlayer = (team.players || []).find(p => sel.impact.includes(p.id));
-
+            
             let totalRating = 0, battingPower = 0, bowlingPower = 0, allRoundDepth = 0;
             let batsmen = 0, bowlers = 0, allrounders = 0, wk = 0;
             let totalSpend = 0, avgStrikeRate = 0, avgEconomy = 0;
@@ -114,7 +116,6 @@ class ResultsPage extends Component {
                 }
             });
 
-            // Impact player bonus
             let impactBonus = 0;
             if (impactPlayer) {
                 impactBonus = impactPlayer.rating * 0.15;
@@ -125,13 +126,25 @@ class ResultsPage extends Component {
             avgStrikeRate = srCount > 0 ? avgStrikeRate / srCount : 0;
             avgEconomy = ecoCount > 0 ? avgEconomy / ecoCount : 99;
 
-            // Balance score
             let balanceScore = 0;
             if (wk >= 1) balanceScore += 10;
             if (batsmen >= 3 && batsmen <= 5) balanceScore += 15;
             if (bowlers >= 3 && bowlers <= 5) balanceScore += 15;
             if (allrounders >= 2) balanceScore += 15;
             if (bowlers + allrounders >= 5) balanceScore += 10;
+
+            let strengths = [];
+            let weaknesses = [];
+
+            if (battingPower > 250) strengths.push("Formidable batting lineup");
+            if (bowlingPower > 250) strengths.push("Elite bowling attack");
+            if (allrounders >= 3) strengths.push("Excellent all-round balance");
+            if (wk >= 1) strengths.push("Solid wicket-keeping presence");
+
+            if (battingPower < 200) weaknesses.push("Thin batting order");
+            if (bowlingPower < 200) weaknesses.push("Vulnerable bowling attack");
+            if (allrounders < 2) weaknesses.push("Lack of multi-dimensional players");
+            if (avgEconomy > 8.5) weaknesses.push("Expensive bowling unit");
 
             return {
                 team,
@@ -146,17 +159,18 @@ class ResultsPage extends Component {
                 batsmen, bowlers, allrounders, wk,
                 impactPlayer,
                 impactBonus: impactBonus.toFixed(1),
-                // Overall strength (weighted)
                 overallStrength: (
                     avgRating * 3 +
-                    battingPower * 0.5 +
-                    bowlingPower * 0.5 +
+                    battingPower * 0.2 +
+                    bowlingPower * 0.2 +
                     allRoundDepth * 0.3 +
                     balanceScore * 1.5 +
                     avgStrikeRate * 0.3 +
                     (10 - Math.min(10, avgEconomy)) * 10 +
                     impactBonus * 5
                 ),
+                strengths,
+                weaknesses
             };
         });
 
@@ -172,11 +186,44 @@ class ResultsPage extends Component {
                 winChance: totalStrength > 0 ? ((winner.overallStrength / totalStrength) * 100).toFixed(1) : 50,
             }
         });
+
+        this.saveMatchHistory(teamScores, winner.team);
+    };
+
+    saveMatchHistory = async (teamScores, winningTeam) => {
+        if (!auth.currentUser) return;
+        
+        const myTeamScore = teamScores.find(ts => ts.team.id === this.props.myTeamId);
+        const opponentScore = teamScores.find(ts => ts.team.id !== this.props.myTeamId);
+        const mySelection = this.state.roomData.selections[this.props.myTeamId];
+
+        if (!myTeamScore) return;
+
+        try {
+            await addDoc(collection(firestore, "matchHistory"), {
+                userId: auth.currentUser.uid,
+                timestamp: Date.now(),
+                teamId: this.props.myTeamId,
+                teamName: myTeamScore.team.name,
+                opponentName: opponentScore ? opponentScore.team.name : 'Unknown',
+                isWinner: winningTeam.id === this.props.myTeamId,
+                xi: (myTeamScore.team.players || []).filter(p => mySelection.xi.includes(p.id)).map(p => p.name),
+                verdict: winningTeam.id === this.props.myTeamId ? "Victory based on superior team balance." : "Defeated by a more balanced opponent squad."
+            });
+            console.log("Match history saved successfully!");
+        } catch (error) {
+            console.error("Error saving match history:", error);
+        }
     };
 
     render() {
-        const { teams } = this.props;
-        const { teamSelections, currentSelectingTeamId, selectionMode, matchPrediction, allTeamsReady } = this.state;
+        const { roomData, mySelection, selectionMode, matchPrediction } = this.state;
+        if (!roomData) return null;
+
+        const teams = roomData.teams || [];
+        const selections = roomData.selections || {};
+        const qualifiedTeams = teams.filter(t => t.qualified !== false);
+        const allTeamsReady = qualifiedTeams.every(t => selections[t.id]?.ready);
 
         return (
             <div className="container pb-20 animate-fade-in">
@@ -184,7 +231,7 @@ class ResultsPage extends Component {
                 <p className="text-center text-secondary mb-12 text-lg">
                     {allTeamsReady
                         ? 'All teams are ready! Click "Predict Match Winner" to see the AI analysis.'
-                        : 'Select Playing XI (11 players) + Impact Player (1 player) for each team.'}
+                        : 'Select your team\'s Playing XI (11 players) + 1 Impact Player.'}
                 </p>
 
                 {/* Match Prediction Overlay */}
@@ -252,6 +299,25 @@ class ResultsPage extends Component {
                                 </div>
                             </div>
 
+                            {/* Strengths & Weaknesses */}
+                            <div className="grid grid-cols-2 gap-4 mt-6 border-t border-white border-opacity-10 pt-6">
+                                {matchPrediction.teamScores.map((ts, idx) => (
+                                    <div key={idx} className="text-left">
+                                        <div className="text-[10px] font-bold text-secondary uppercase tracking-widest mb-2">{ts.team.name} ANALYSIS</div>
+                                        <div className="mb-4">
+                                            {ts.strengths.map((s, i) => (
+                                                <div key={i} className="text-xs text-success mb-1">✅ {s}</div>
+                                            ))}
+                                        </div>
+                                        <div>
+                                            {ts.weaknesses.map((w, i) => (
+                                                <div key={i} className="text-xs text-danger mb-1">❌ {w}</div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
                             {/* Winner */}
                             <div className={`prediction-winner ${matchPrediction.winner.id === teams[0]?.id ? 'prediction-winner--team1' : 'prediction-winner--team2'}`}>
                                 <div className="prediction-winner-label">🏆 Predicted Winner</div>
@@ -284,17 +350,21 @@ class ResultsPage extends Component {
                 {/* Team Cards */}
                 <div className="grid grid-cols-auto-fill gap-8">
                     {teams.map(team => {
-                        const sel = teamSelections[team.id] || { xi: [], impact: [] };
-                        const isCurrentTeam = team.id === currentSelectingTeamId && !allTeamsReady;
-                        const isLocked = allTeamsReady || (currentSelectingTeamId !== team.id);
+                        const isMyTeam = team.id === this.props.myTeamId;
+                        const sel = selections[team.id] || { xi: [], impact: [] };
+                        const isLocked = sel.ready || allTeamsReady;
+
+                        // Host can see everything if all ready, or just their own.
+                        // Non-host only sees their own until all ready.
+                        if (!allTeamsReady && !isMyTeam) return null;
 
                         return (
-                            <div key={team.id} className={`glass p-8 ${isCurrentTeam ? 'border-accent' : ''}`} style={isCurrentTeam ? { borderWidth: '2px' } : {}}>
+                            <div key={team.id} className={`glass p-8 ${isMyTeam ? 'border-accent' : ''} ${!isMyTeam ? 'opacity-90' : ''}`} style={isMyTeam ? { borderWidth: '2px' } : {}}>
                                 <div className="flex justify-between items-center mb-4 border-b-2 border-accent pb-4">
-                                    <h2 className="text-2xl font-bold text-accent">
+                                    <h2 className="text-2xl font-bold text-accent uppercase">
                                         {team.name}
-                                        {isCurrentTeam && <span className="text-sm bg-accent text-dark px-2 py-1 rounded ml-2 align-middle">SELECTING</span>}
-                                        {isLocked && sel.xi.length === 11 && <span className="text-sm bg-success text-dark px-2 py-1 rounded ml-2 align-middle">✓ READY</span>}
+                                        {isMyTeam && !sel.ready && <span className="text-[10px] bg-accent text-dark px-2 py-1 rounded ml-2 align-middle font-bold">YOUR TEAM</span>}
+                                        {sel.ready && <span className="text-[10px] bg-success text-dark px-2 py-1 rounded ml-2 align-middle font-bold">✓ READY</span>}
                                     </h2>
                                     <div className="text-right">
                                         <div className="text-xs text-secondary font-bold tracking-widest uppercase mb-1">PURSE</div>
@@ -303,29 +373,27 @@ class ResultsPage extends Component {
                                 </div>
 
                                 {/* Selection Controls */}
-                                {isCurrentTeam && (
+                                {isMyTeam && !sel.ready && (
                                     <div className="mb-6 animate-fade-in">
-                                        <div className="xi-selection-header">
-                                            <div>
-                                                <div className="flex gap-3 mb-2">
-                                                    <button
-                                                        className={`btn text-xs py-2 px-4 ${selectionMode === 'xi' ? 'btn-primary' : 'btn-outline'}`}
-                                                        onClick={() => this.setState({ selectionMode: 'xi' })}
-                                                    >Playing XI ({sel.xi.length}/11)</button>
-                                                    <button
-                                                        className={`btn text-xs py-2 px-4 ${selectionMode === 'impact' ? 'btn-primary' : 'btn-outline'}`}
-                                                        onClick={() => this.setState({ selectionMode: 'impact' })}
-                                                    >Impact Player ({sel.impact.length}/1)</button>
-                                                </div>
+                                        <div className="xi-selection-header mb-4">
+                                            <div className="flex gap-3">
+                                                <button
+                                                    className={`btn text-xs py-2 px-4 ${selectionMode === 'xi' ? 'btn-primary' : 'btn-outline'}`}
+                                                    onClick={() => this.setState({ selectionMode: 'xi' })}
+                                                >XI ({sel.xi.length}/11)</button>
+                                                <button
+                                                    className={`btn text-xs py-2 px-4 ${selectionMode === 'impact' ? 'btn-primary' : 'btn-outline'}`}
+                                                    onClick={() => this.setState({ selectionMode: 'impact' })}
+                                                >IMPACT ({sel.impact.length}/1)</button>
                                             </div>
-                                            <div className={`xi-counter ${sel.xi.length === 11 && sel.impact.length === 1 ? 'xi-counter--complete' : ''}`}>
-                                                {sel.xi.length === 11 && sel.impact.length === 1 ? '✅ Ready' : `${sel.xi.length}/11`}
+                                            <div className={`xi-counter ${sel.xi.length === 11 && sel.impact.length === 1 ? 'text-success' : 'text-accent'} font-bold`}>
+                                                {sel.xi.length === 11 && sel.impact.length === 1 ? 'ALL SET!' : `${sel.xi.length}/11`}
                                             </div>
                                         </div>
 
                                         {sel.xi.length === 11 && sel.impact.length === 1 && (
-                                            <button className="btn btn-primary w-full py-3 animate-fade-in" onClick={() => this.confirmTeamSelection(team.id)}>
-                                                Confirm {team.name}'s Selection →
+                                            <button className="btn btn-primary w-full py-4 text-md font-black tracking-widest uppercase shadow-lg shadow-success/20" onClick={this.confirmSelection}>
+                                                LOCK PLAYING XI
                                             </button>
                                         )}
                                     </div>
@@ -349,8 +417,8 @@ class ResultsPage extends Component {
                                                     <div
                                                         key={i}
                                                         className={rowClass}
-                                                        onClick={() => !isLocked && this.togglePlayer(team.id, p.id)}
-                                                        style={isLocked ? { cursor: 'default' } : {}}
+                                                        onClick={() => isMyTeam && !sel.ready && this.togglePlayer(p.id)}
+                                                        style={!isMyTeam || sel.ready ? { cursor: 'default' } : {}}
                                                     >
                                                         <div className="flex items-center gap-3">
                                                             <img src={p.image} alt="" style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover', border: '2px solid rgba(212,175,55,0.5)' }} />

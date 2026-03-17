@@ -151,7 +151,14 @@ class AuctionDashboard extends Component {
             const minBasePrice = Math.min(...this.props.players.map(p => p.basePrice));
             const allTeamsInactive = roomData.teams.every(t => this.isTeamInactive(t, minBasePrice));
             if (allTeamsInactive) {
-                await update(this.roomRef, { status: 'finished' });
+                const teamsWithValidation = roomData.teams.map(t => ({
+                    ...t,
+                    qualified: (t.players ? t.players.length : 0) >= 11
+                }));
+                await update(this.roomRef, { 
+                    status: 'transfer',
+                    teams: teamsWithValidation
+                });
                 return;
             }
 
@@ -167,7 +174,14 @@ class AuctionDashboard extends Component {
                 .map(p => p.originalIndex);
 
             if (availableIndices.length === 0) {
-                await update(this.roomRef, { status: 'finished' });
+                const teamsWithValidation = roomData.teams.map(t => ({
+                    ...t,
+                    qualified: (t.players ? t.players.length : 0) >= 11
+                }));
+                await update(this.roomRef, { 
+                    status: 'transfer',
+                    teams: teamsWithValidation
+                });
                 return;
             }
             playerIndex = availableIndices[Math.floor(Math.random() * availableIndices.length)];
@@ -423,12 +437,18 @@ class AuctionDashboard extends Component {
                                     <div className="flex justify-between mb-2 items-center">
                                         <span className="font-bold text-lg">
                                             {team.name}
-                                            {inactive && <span className="text-xs bg-danger text-white px-2 py-1 rounded ml-2 align-middle">RESTING</span>}
+                                            {team.qualified !== undefined ? (
+                                                team.qualified ? 
+                                                <span className="text-[10px] bg-success text-dark px-2 py-0.5 rounded ml-2 align-middle font-bold">✅ QUALIFIED</span> :
+                                                <span className="text-[10px] bg-danger text-white px-2 py-0.5 rounded ml-2 align-middle font-bold">❌ DISQUALIFIED</span>
+                                            ) : (
+                                                inactive && <span className="text-xs bg-danger text-white px-2 py-1 rounded ml-2 align-middle">RESTING</span>
+                                            )}
                                         </span>
                                         <span className="text-accent font-black text-xl">{team.purse.toFixed(1)} <span className="text-sm">Cr</span></span>
                                     </div>
-                                    <div className={`text-xs font-semibold uppercase tracking-wide mb-3 ${team.players && team.players.length >= 18 ? 'text-danger' : 'text-secondary'}`}>
-                                        Squad: {team.players ? team.players.length : 0} / 18
+                                    <div className={`text-xs font-semibold uppercase tracking-wide mb-3 ${team.players && team.players.length >= 18 ? 'text-danger' : (team.players && team.players.length < 11 && roomData.status === 'finished') ? 'text-danger' : 'text-secondary'}`}>
+                                        Squad: {team.players ? team.players.length : 0} / 11-18
                                     </div>
                                     {team.players && team.players.length > 0 && (
                                         <div className="border-t border-white border-opacity-10 pt-3 flex flex-col gap-2">
