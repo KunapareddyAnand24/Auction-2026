@@ -35,6 +35,7 @@ class AuctionDashboard extends Component {
     componentDidUpdate(prevProps, prevState) {
         // Auto-trigger sold when timer reaches 0
         if (
+            this.props.isHost && // Only host handles the auto-transition to avoid race conditions
             prevState.localTimer > 0 &&
             this.state.localTimer === 0 &&
             this.state.roomData &&
@@ -317,6 +318,19 @@ class AuctionDashboard extends Component {
                         </div>
                     )}
                 </div>
+
+                {/* Admin Controls */}
+                {this.props.isHost && roomData.status === 'waiting' && !this.state.isProcessingSold && !this.state.soldCelebration && (
+                    <div className="absolute inset-0 bg-dark bg-opacity-80 flex items-center justify-center z-50 animate-fade-in">
+                        <div className="glass p-12 text-center max-w-sm">
+                            <h2 className="text-3xl font-black text-accent mb-6 tracking-widest uppercase">Ready to Auction?</h2>
+                            <p className="text-secondary mb-8">Click below to start the auction for the next player.</p>
+                            <button className="btn btn-primary w-full py-4 text-xl font-bold animate-pulse shadow-lg" onClick={() => this.startAuctionForPlayer(-1)}>
+                                START AUCTION
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 {/* Center: Bid Control */}
                 <div className="flex flex-col gap-6 mobile-order-1">

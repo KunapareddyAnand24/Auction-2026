@@ -361,6 +361,19 @@ class ComputerAuction extends Component {
 
         </div>
 
+        {/* Start Control */}
+        {status === 'waiting' && !soldCelebration && !this.state.isProcessingSold && (
+          <div className="absolute inset-0 bg-dark bg-opacity-80 flex items-center justify-center z-50 animate-fade-in">
+            <div className="glass p-12 text-center max-w-sm">
+              <h2 className="text-3xl font-black text-accent mb-6 tracking-widest uppercase">Start Auction</h2>
+              <p className="text-secondary mb-8">Ready to bid against the AI? Click below to reveal the next player.</p>
+              <button className="btn btn-primary w-full py-4 text-xl font-bold animate-pulse shadow-lg" onClick={this.startNextAuction}>
+                START AUCTION
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Center: Bid Control */}
         <div className="flex flex-col gap-6 mobile-order-1">
           {/* Timer */}
