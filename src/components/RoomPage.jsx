@@ -1,15 +1,15 @@
 import React, { Component } from 'react';
-import { ref, set, get } from 'firebase/database';
+import { ref, set, get, runTransaction } from 'firebase/database';
 import { db } from '../firebase';
 
 class RoomPage extends Component {
     state = {
         roomCode: '',
         joinCode: '',
-        teamsInput: ['CSK', 'MI'], // Default team names
+        hostTeamName: '',
+        joinTeamName: '',
+        maxTeams: 2,
         isCreating: true,
-        selectedTeamId: null,
-        availableTeams: null,
     };
 
     componentDidMount() {
@@ -21,27 +21,11 @@ class RoomPage extends Component {
         this.setState({ roomCode: code });
     };
 
-    handleTeamNameChange = (index, value) => {
-        const teamsInput = [...this.state.teamsInput];
-        teamsInput[index] = value;
-        this.setState({ teamsInput });
-    };
-
-    addTeamField = () => {
-        if (this.state.teamsInput.length >= 8) {
-            alert("Maximum 8 teams allowed.");
-            return;
-        }
-        this.setState({ teamsInput: [...this.state.teamsInput, ''] });
-    };
-
-    removeTeamField = (index) => {
-        if (this.state.teamsInput.length <= 2) {
-            alert("Minimum 2 teams required.");
-            return;
-        }
-        const teamsInput = this.state.teamsInput.filter((_, i) => i !== index);
-        this.setState({ teamsInput });
+    handleMaxTeamsChange = (action) => {
+        let { maxTeams } = this.state;
+        if (action === 'increment' && maxTeams < 8) maxTeams++;
+        if (action === 'decrement' && maxTeams > 2) maxTeams--;
+        this.setState({ maxTeams });
     };
 
     getPoolSize = (teamCount) => {
@@ -52,27 +36,21 @@ class RoomPage extends Component {
     };
 
     handleCreateRoom = async () => {
-        const { roomCode, teamsInput } = this.state;
+        const { roomCode, hostTeamName, maxTeams } = this.state;
 
         if (!roomCode) {
             alert("Please generate a room code first.");
             return;
         }
 
-        const teams = teamsInput
-            .filter(name => name && name.trim() !== '')
-            .map((name, index) => ({
-                id: index + 1,
-                name: name.trim(),
-                purse: 100,
-                players: []
-            }));
-
-        if (teams.length < 2) {
-            teams.length = 0;
-            teams.push({ id: 1, name: "CSK", purse: 100, players: [] });
-            teams.push({ id: 2, name: "MI", purse: 100, players: [] });
+        if (!hostTeamName.trim()) {
+            alert("Please enter your team name.");
+            return;
         }
+
+        const teams = [
+            { id: 1, name: hostTeamName.trim(), purse: 100, players: [] }
+        ];
 
         if (!db) {
             alert("Firebase is not configured correctly. Please check console for details.");
@@ -80,11 +58,12 @@ class RoomPage extends Component {
         }
 
         try {
-            const maxPlayers = this.getPoolSize(teams.length);
+            const maxPlayers = this.getPoolSize(maxTeams);
 
             const roomRef = ref(db, `rooms/${this.state.roomCode}`);
             await set(roomRef, {
                 teams: teams,
+                maxAllowedTeams: maxTeams,
                 currentPlayerIndex: 0,
                 currentBid: 0,
                 highestBidderId: null,
@@ -97,7 +76,7 @@ class RoomPage extends Component {
             this.props.setIsHost(true);
             this.props.setRoomCode(roomCode);
             this.props.setTeams(teams);
-            this.props.setView('auction');
+            this.props.setView('rules'); // Transition to rules page instead of directly to auction
         } catch (error) {
             console.error("Error creating room:", error);
             alert(`Failed to create room: ${error.message}`);
@@ -105,9 +84,9 @@ class RoomPage extends Component {
     };
 
     handleJoinRoom = async () => {
-        const { joinCode, selectedTeamId } = this.state;
-        if (!joinCode) {
-            alert("Please enter a room code.");
+        const { joinCode, joinTeamName } = this.state;
+        if (!joinCode || !joinTeamName.trim()) {
+            alert("Please enter a room code and your team name.");
             return;
         }
 
@@ -117,29 +96,44 @@ class RoomPage extends Component {
                 return;
             }
             const roomRef = ref(db, `rooms/${joinCode}`);
-            const snapshot = await get(roomRef);
-
-            if (snapshot.exists()) {
-                const roomData = snapshot.val();
-
-                if (!selectedTeamId && roomData.teams && !this.state.availableTeams) {
-                    this.setState({ availableTeams: roomData.teams });
-                    return;
+            
+            // Using transaction to safely append to teams array
+            let joinedTeamId = null;
+            let finalTeams = [];
+            const result = await runTransaction(roomRef, (currentData) => {
+                if (currentData) {
+                    if (!currentData.teams) currentData.teams = [];
+                    const maxAllowed = currentData.maxAllowedTeams || 8;
+                    
+                    const existingTeam = currentData.teams.find(t => t.name.toLowerCase() === joinTeamName.trim().toLowerCase());
+                    if (existingTeam) {
+                        joinedTeamId = existingTeam.id;
+                        finalTeams = currentData.teams;
+                        return currentData; // No change
+                    }
+                    
+                    if (currentData.teams.length >= maxAllowed) {
+                        return; // Abort transaction
+                    }
+                    
+                    joinedTeamId = currentData.teams.length + 1;
+                    const newTeam = { id: joinedTeamId, name: joinTeamName.trim(), purse: 100, players: [] };
+                    currentData.teams.push(newTeam);
+                    finalTeams = currentData.teams;
                 }
+                return currentData;
+            });
 
-                if (!selectedTeamId) {
-                    alert("Please select a team to join.");
-                    return;
-                }
-
-                this.props.setRoomCode(joinCode);
-                this.props.setTeams(roomData.teams || []);
-                this.props.setMyTeamId(selectedTeamId);
-                this.props.setIsHost(false);
-                this.props.setView('auction');
-            } else {
-                alert("Room not found. Check the code.");
+            if (!result.committed && !joinedTeamId) {
+                alert("Room is full or doesn't exist.");
+                return;
             }
+
+            this.props.setRoomCode(joinCode);
+            this.props.setTeams(finalTeams);
+            this.props.setMyTeamId(joinedTeamId);
+            this.props.setIsHost(false);
+            this.props.setView('rules'); // Transition to rules before auction
         } catch (error) {
             console.error("Error joining room:", error);
             alert("Failed to join room. Check your connection.");
@@ -147,9 +141,8 @@ class RoomPage extends Component {
     };
 
     render() {
-        const { teamsInput, isCreating } = this.state;
-        const teamCount = teamsInput.filter(t => t && t.trim() !== '').length || 2;
-        const poolSize = this.getPoolSize(teamCount);
+        const { isCreating, maxTeams, hostTeamName, joinCode, joinTeamName } = this.state;
+        const poolSize = this.getPoolSize(maxTeams);
 
         return (
             <div className="container animate-fade-in">
@@ -184,6 +177,25 @@ class RoomPage extends Component {
                                 </button>
                             </div>
 
+                            <div className="mb-6">
+                                <label className="text-accent text-sm font-bold tracking-widest uppercase mb-2 block">Your Team Name</label>
+                                <input
+                                    type="text"
+                                    placeholder="Enter your franchise name"
+                                    value={hostTeamName}
+                                    onChange={(e) => this.setState({ hostTeamName: e.target.value })}
+                                />
+                            </div>
+
+                            <div className="mb-6">
+                                <label className="text-accent text-sm font-bold tracking-widest uppercase mb-2 block">Maximum Teams Allowed</label>
+                                <div className="flex items-center justify-between glass px-4 py-2 mt-2">
+                                    <button className="btn-outline px-4 py-1" onClick={() => this.handleMaxTeamsChange('decrement')}>-</button>
+                                    <span className="text-2xl font-black">{maxTeams}</span>
+                                    <button className="btn-outline px-4 py-1" onClick={() => this.handleMaxTeamsChange('increment')}>+</button>
+                                </div>
+                            </div>
+
                             {/* Pool Size Indicator */}
                             <div className="text-center mb-6">
                                 <div className="pool-indicator">
@@ -192,69 +204,37 @@ class RoomPage extends Component {
                                 </div>
                             </div>
 
-                            <div className="mb-6">
-                                <h3 className="mb-4 text-accent text-md font-bold tracking-wide uppercase">SQUAD TEAMS</h3>
-                                <div className="flex flex-col gap-3">
-                                    {teamsInput.map((team, index) => (
-                                        <div key={index} className="team-input-row">
-                                            <input
-                                                type="text"
-                                                placeholder={`Team ${index + 1} Name`}
-                                                value={team}
-                                                onChange={(e) => this.handleTeamNameChange(index, e.target.value)}
-                                            />
-                                            {teamsInput.length > 2 && (
-                                                <button
-                                                    className="btn-remove-team"
-                                                    onClick={() => this.removeTeamField(index)}
-                                                    title="Remove team"
-                                                >
-                                                    ✕
-                                                </button>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                                <button className="btn btn-outline w-full mt-4 py-3" onClick={this.addTeamField}>+ Add Team</button>
-                            </div>
-
                             <button className="btn btn-primary w-full mt-4 py-4 text-md" onClick={this.handleCreateRoom}>
-                                Initialize Global Auction
+                                Create Game Room
                             </button>
                         </div>
                     ) : (
                         <div className="join-section text-center animate-fade-in">
                             <h2 className="text-2xl mb-6 font-bold">Join Existing Room</h2>
-                            <div className="mb-8 text-left">
-                                <label>ENTER 6-DIGIT CODE</label>
+                            <div className="mb-6 text-left">
+                                <label className="text-accent text-sm font-bold tracking-widest uppercase block mb-2">ENTER 6-DIGIT CODE</label>
                                 <input
                                     type="text"
                                     placeholder="e.g. A1B2C3"
-                                    value={this.state.joinCode}
-                                    onChange={(e) => this.setState({ joinCode: e.target.value.toUpperCase(), availableTeams: null, selectedTeamId: null })}
-                                    className="text-center text-3xl tracking-widest py-4 font-black"
+                                    value={joinCode}
+                                    onChange={(e) => this.setState({ joinCode: e.target.value.toUpperCase() })}
+                                    className="text-center text-3xl tracking-widest py-4 font-black mb-4"
                                 />
                             </div>
 
-                            {this.state.availableTeams && (
-                                <div className="mb-8 text-left animate-fade-in">
-                                    <label className="text-accent">SELECT YOUR TEAM</label>
-                                    <div className="grid grid-cols-2 gap-3 mt-4">
-                                        {this.state.availableTeams.map(team => (
-                                            <button
-                                                key={team.id}
-                                                className={`btn ${this.state.selectedTeamId === team.id ? 'btn-primary' : 'btn-outline'} py-3`}
-                                                onClick={() => this.setState({ selectedTeamId: team.id })}
-                                            >
-                                                {team.name}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
+                            <div className="mb-8 text-left">
+                                <label className="text-accent text-sm font-bold tracking-widest uppercase block mb-2">YOUR TEAM NAME</label>
+                                <input
+                                    type="text"
+                                    placeholder="Enter your franchise name"
+                                    value={joinTeamName}
+                                    onChange={(e) => this.setState({ joinTeamName: e.target.value })}
+                                    className="py-3"
+                                />
+                            </div>
 
                             <button className="btn btn-primary w-full py-4 text-md" onClick={this.handleJoinRoom}>
-                                {this.state.availableTeams ? 'Join Arena' : 'Check Room'}
+                                Join Room
                             </button>
                         </div>
                     )}

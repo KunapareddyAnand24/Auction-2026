@@ -9,7 +9,9 @@ class UserProfile extends Component {
         stats: {
             total: 0,
             won: 0,
-            lost: 0
+            lost: 0,
+            winPercentage: 0,
+            previousTeams: []
         }
     };
 
@@ -37,12 +39,17 @@ class UserProfile extends Component {
                 if (data.isWinner) won++;
             });
 
+            const uniqueTeams = [...new Set(history.map(m => m.teamName))];
+            const winPercentage = history.length > 0 ? Math.round((won / history.length) * 100) : 0;
+
             this.setState({
                 history,
                 stats: {
                     total: history.length,
                     won: won,
-                    lost: history.length - won
+                    lost: history.length - won,
+                    winPercentage: winPercentage,
+                    previousTeams: uniqueTeams
                 },
                 loading: false
             });
@@ -59,7 +66,15 @@ class UserProfile extends Component {
         if (loading) return <div className="container text-center py-20 animate-pulse text-accent">LOADING PROFILE...</div>;
 
         return (
-            <div className="container animate-fade-in max-w-4xl">
+            <div className="container animate-fade-in max-w-4xl pb-20">
+                {this.props.setView && (
+                    <button 
+                        className="btn btn-outline mb-6 px-4 py-2 text-sm flex items-center gap-2"
+                        onClick={() => this.props.setView('modeSelect')}
+                    >
+                        <span>← Back to Dashboard</span>
+                    </button>
+                )}
                 <div className="glass p-10 mb-10 flex flex-col md:flex-row items-center gap-8">
                     <div className="w-24 h-24 bg-accent rounded-full flex items-center justify-center text-dark text-4xl font-black">
                         {user.displayName ? user.displayName[0] : 'U'}
@@ -69,7 +84,7 @@ class UserProfile extends Component {
                         <p className="text-secondary">{user.email}</p>
                     </div>
                     <div className="flex-1"></div>
-                    <div className="grid grid-cols-3 gap-6">
+                    <div className="grid grid-cols-4 gap-4">
                         <div className="text-center">
                             <div className="text-2xl font-black text-accent">{stats.total}</div>
                             <div className="text-[10px] text-secondary font-bold uppercase tracking-widest">Played</div>
@@ -82,10 +97,25 @@ class UserProfile extends Component {
                             <div className="text-2xl font-black text-danger">{stats.lost}</div>
                             <div className="text-[10px] text-secondary font-bold uppercase tracking-widest">Lost</div>
                         </div>
+                        <div className="text-center">
+                            <div className="text-2xl font-black text-primary">{stats.winPercentage}%</div>
+                            <div className="text-[10px] text-secondary font-bold uppercase tracking-widest">Win Rate</div>
+                        </div>
                     </div>
                 </div>
 
-                <h2 className="text-2xl font-bold text-accent mb-6 uppercase tracking-widest">Match History</h2>
+                {stats.previousTeams && stats.previousTeams.length > 0 && (
+                    <div className="mb-10">
+                        <h2 className="text-xl font-bold text-accent mb-4 uppercase tracking-widest">Franchises Managed</h2>
+                        <div className="flex flex-wrap gap-2">
+                            {stats.previousTeams.map((team, idx) => (
+                                <span key={idx} className="bg-dark px-4 py-2 rounded-full border border-white border-opacity-10 text-sm font-bold text-white tracking-wider">{team}</span>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                <h2 className="text-xl font-bold text-accent mb-6 uppercase tracking-widest">Match History</h2>
                 
                 {history.length === 0 ? (
                     <div className="glass p-12 text-center text-secondary italic">

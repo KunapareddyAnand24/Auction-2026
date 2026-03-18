@@ -12,6 +12,7 @@ class AuctionDashboard extends Component {
             serverTimeOffset: 0,
             soldCelebration: null,
             isProcessingSold: false,
+            currentPlayerImage: null,
         };
         this.timerInterval = null;
         this.roomRef = db && this.props.roomCode ? ref(db, `rooms/${this.props.roomCode}`) : null;
@@ -58,13 +59,33 @@ class AuctionDashboard extends Component {
         this.roomListener = onValue(this.roomRef, (snapshot) => {
             const data = snapshot.val();
             if (data) {
+                const prevIndex = this.state.roomData ? this.state.roomData.currentPlayerIndex : -1;
                 this.setState({ roomData: data });
+
+                if (data.currentPlayerIndex !== prevIndex && this.props.players[data.currentPlayerIndex]) {
+                    this.fetchPlayerImage(this.props.players[data.currentPlayerIndex].name);
+                }
 
                 // Convert history object to array
                 const history = data.bidHistory ? Object.values(data.bidHistory).reverse() : [];
                 this.setState({ bidHistory: history });
             }
         });
+    };
+
+    fetchPlayerImage = async (playerName) => {
+        this.setState({ currentPlayerImage: null });
+        try {
+            const response = await fetch(`https://en.wikipedia.org/w/api.php?action=query&prop=pageimages&format=json&piprop=original&titles=${encodeURIComponent(playerName)}&origin=*`);
+            const data = await response.json();
+            const pages = data.query.pages;
+            const pageId = Object.keys(pages)[0];
+            if (pageId !== '-1' && pages[pageId].original) {
+                this.setState({ currentPlayerImage: pages[pageId].original.source });
+            }
+        } catch (error) {
+            console.error("Failed to fetch player image:", error);
+        }
     };
 
     startLocalTimer = () => {
@@ -266,6 +287,7 @@ class AuctionDashboard extends Component {
 
         const players = this.props.players;
         const player = players[roomData.currentPlayerIndex];
+        const displayImage = this.state.currentPlayerImage || player.image;
         const teams = roomData.teams || [];
 
         if (roomData.status === 'finished') {
@@ -306,7 +328,7 @@ class AuctionDashboard extends Component {
                 {/* Left: Player Card */}
                 <div className="glass p-6 flex flex-col gap-4 mobile-order-2">
                     <div className="player-image-container">
-                        <img src={player.image} alt={player.name} />
+                        <img src={displayImage} alt={player.name} />
                         <div className="player-rating-badge">
                             {player.rating}
                         </div>

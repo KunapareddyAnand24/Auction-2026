@@ -1,0 +1,17 @@
+
+C:\Users\anand\OneDrive\Desktop\Auction-game\Auction-Game\src\components\ComputerAuction.jsx
+  226:71  error  'soldPlayerNames' is assigned a value but never used. Allowed unused vars must match /^[A-Z_]/u  no-unused-vars
+
+C:\Users\anand\OneDrive\Desktop\Auction-game\Auction-Game\src\components\ResultsPage.jsx
+  220:27  error  'mySelection' is assigned a value but never used. Allowed unused vars must match /^[A-Z_]/u  no-unused-vars
+  274:39  error  'max' is assigned a value but never used. Allowed unused vars must match /^[A-Z_]/u          no-unused-vars
+  355:31  error  'isLocked' is assigned a value but never used. Allowed unused vars must match /^[A-Z_]/u     no-unused-vars
+
+C:\Users\anand\OneDrive\Desktop\Auction-game\Auction-Game\src\components\RoomPage.jsx
+  2:20  error  'get' is defined but never used. Allowed unused vars must match /^[A-Z_]/u  no-unused-vars
+
+C:\Users\anand\OneDrive\Desktop\Auction-game\Auction-Game\src\firebase.js
+  39:31  error  Parsing error: Export 'firestore' is not defined
+
+✖ 6 problems (6 errors, 0 warnings)
+

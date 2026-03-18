@@ -48,7 +48,7 @@ class ModeSelector extends Component {
           CHOOSE YOUR MODE
         </h1>
         <p className="text-secondary mb-12 text-lg text-center" style={{ maxWidth: '500px' }}>
-          Pick how you want to play the IPL Auction 2026
+          Pick how you want to play the APL Auction 2026
         </p>
 
         <div className="mode-grid">

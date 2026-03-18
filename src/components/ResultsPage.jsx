@@ -5,8 +5,8 @@ import { collection, addDoc } from 'firebase/firestore';
 
 class ResultsPage extends Component {
     state = {
-        // Track selections per team: { xi: [playerId, ...], impact: [playerId, ...], ready: true/false }
         mySelection: { xi: [], impact: [], ready: false },
+        selectionMode: 'xi',
         roomData: null,
         matchPrediction: null,
     };
@@ -22,12 +22,16 @@ class ResultsPage extends Component {
         this.roomListener = onValue(roomRef, (snapshot) => {
             const data = snapshot.val();
             if (data) {
-                this.setState({ roomData: data });
-                
-                // Sync my selection if it exists in DB
+                let newSelection = this.state.mySelection;
                 if (data.selections && data.selections[this.props.myTeamId]) {
-                    this.setState({ mySelection: data.selections[this.props.myTeamId] });
+                    const dbSel = data.selections[this.props.myTeamId];
+                    newSelection = {
+                        xi: dbSel.xi || [],
+                        impact: dbSel.impact || [],
+                        ready: dbSel.ready || false
+                    };
                 }
+                this.setState({ roomData: data, mySelection: newSelection });
             }
         });
     };
@@ -228,7 +232,7 @@ class ResultsPage extends Component {
         return (
             <div className="container pb-20 animate-fade-in">
                 <h1 className="gradient-text text-center mb-4 text-5xl font-black tracking-tight">AUCTION RESULTS</h1>
-                <p className="text-center text-secondary mb-12 text-lg">
+                <p className="text-center text-secondary mb-8 text-lg">
                     {allTeamsReady
                         ? 'All teams are ready! Click "Predict Match Winner" to see the AI analysis.'
                         : 'Select your team\'s Playing XI (11 players) + 1 Impact Player.'}
@@ -348,18 +352,35 @@ class ResultsPage extends Component {
                 )}
 
                 {/* Team Cards */}
-                <div className="grid grid-cols-auto-fill gap-8">
+                <div className={allTeamsReady ? "grid grid-cols-auto-fill gap-8" : "flex justify-center items-start w-full"}>
                     {teams.map(team => {
                         const isMyTeam = team.id === this.props.myTeamId;
-                        const sel = selections[team.id] || { xi: [], impact: [] };
+                        const rawSel = selections[team.id] || {};
+                        const sel = {
+                            xi: rawSel.xi || [],
+                            impact: rawSel.impact || [],
+                            ready: rawSel.ready || false
+                        };
                         const isLocked = sel.ready || allTeamsReady;
 
                         // Host can see everything if all ready, or just their own.
                         // Non-host only sees their own until all ready.
                         if (!allTeamsReady && !isMyTeam) return null;
 
+                        if (!allTeamsReady && isMyTeam && sel.ready) {
+                            // User is waiting for opponents
+                            return (
+                                <div key={team.id} className="glass p-12 text-center max-w-2xl w-full border-2 border-success animate-fade-in mx-auto">
+                                    <div className="text-6xl mb-6">⏳</div>
+                                    <h2 className="text-3xl font-black text-success tracking-widest uppercase mb-4">SQUAD LOCKED</h2>
+                                    <p className="text-secondary text-lg">Waiting for other franchises to finalize their Playing XI...</p>
+                                    <div className="mt-8 animate-pulse text-accent font-bold tracking-widest">DO NOT LEAVE THIS PAGE</div>
+                                </div>
+                            );
+                        }
+
                         return (
-                            <div key={team.id} className={`glass p-8 ${isMyTeam ? 'border-accent' : ''} ${!isMyTeam ? 'opacity-90' : ''}`} style={isMyTeam ? { borderWidth: '2px' } : {}}>
+                            <div key={team.id} className={`glass p-8 relative ${isMyTeam ? 'border-accent' : ''} ${!isMyTeam ? 'opacity-90' : ''} ${!allTeamsReady ? 'w-full max-w-4xl mx-auto' : ''}`} style={isMyTeam && !sel.ready ? { borderWidth: '2px' } : {}}>
                                 <div className="flex justify-between items-center mb-4 border-b-2 border-accent pb-4">
                                     <h2 className="text-2xl font-bold text-accent uppercase">
                                         {team.name}

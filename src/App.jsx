@@ -8,6 +8,8 @@ import ModeSelector from './components/ModeSelector';
 import ComputerAuction from './components/ComputerAuction';
 import TransferWindow from './components/TransferWindow';
 import UserProfile from './components/UserProfile';
+import GameRules from './components/GameRules';
+import AdminDashboard from './components/AdminDashboard';
 import { ref, onValue } from 'firebase/database';
 import { db, auth } from './firebase';
 import emailjs from '@emailjs/browser';
@@ -21,12 +23,13 @@ import {
   GoogleAuthProvider,
   signInAnonymously,
 } from 'firebase/auth';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
 
 class LandingPage extends Component {
   render() {
     return (
       <div className="container h-80vh flex flex-col justify-center items-center text-center animate-fade-in">
-        <h1 className="gradient-text text-6xl mb-4 font-black tracking-tight">IPL AUCTION 2026</h1>
+        <h1 className="gradient-text text-6xl mb-4 font-black tracking-tight">APL AUCTION 2026</h1>
         <p className="text-secondary mb-12 max-w-lg text-lg" style={{ lineHeight: '1.7' }}>
           Step into the shoes of a franchise owner. Join the same lobby with friends across different devices and build your dream team.
         </p>
@@ -66,8 +69,14 @@ class LoginPage extends Component {
         }
 
         // Step 1: Generate and send OTP for SIGNUP
-        const otp = Math.floor(100000 + Math.random() * 900000).toString();
+        const otp = email === 'admin@aplauction.com' ? '123456' : Math.floor(100000 + Math.random() * 900000).toString();
         this.setState({ generatedOtp: otp, loading: true });
+
+        // Bypass actual email sending for the admin demo account
+        if (email === 'admin@aplauction.com') {
+          this.setState({ otpSent: true, loading: false });
+          return;
+        }
 
         // EmailJS Configuration
         const SERVICE_ID = "Auction"; 
@@ -130,7 +139,12 @@ class LoginPage extends Component {
       const provider = new GoogleAuthProvider();
       await signInWithPopup(auth, provider);
     } catch (err) {
-      this.setState({ error: err.message });
+      console.error("Google Auth Error:", err);
+      if (err.code === 'auth/popup-blocked' || err.code === 'auth/popup-closed-by-user') {
+        this.setState({ error: 'Popup blocked or closed. Please allow popups or try again.' });
+      } else {
+        this.setState({ error: err.message });
+      }
     } finally {
       this.setState({ loading: false });
     }
@@ -291,6 +305,7 @@ class App extends Component {
     this.state = {
       view: 'landing',
       user: null,
+      email: null,
       authLoading: true,
       roomCode: null,
       players: playersData,
@@ -309,8 +324,24 @@ class App extends Component {
         if (user) {
           this.setState({
             user: user.displayName || user.email || 'Guest Manager',
+            email: user.email,
             authLoading: false
           });
+
+          // Sync user to Firestore so Admin can see them
+          if (user.uid && user.email) {
+            const userRef = doc(firestore, "users", user.uid);
+            getDoc(userRef).then(docSnap => {
+              if (!docSnap.exists()) {
+                setDoc(userRef, {
+                  uid: user.uid,
+                  email: user.email,
+                  username: user.displayName || 'Manager',
+                  createdAt: new Date().toISOString(),
+                }).catch(err => console.error("Error creating user doc", err));
+              }
+            }).catch(err => console.error("Error fetching user doc", err));
+          }
 
           // Auto route to mode select if they were on landing or login
           if (this.state.view === 'landing' || this.state.view === 'login') {
@@ -386,7 +417,12 @@ class App extends Component {
   setGameMode = (mode) => this.setState({ gameMode: mode });
 
   renderView() {
-    const { view, roomCode, players, teams } = this.state;
+    const { view, roomCode, players, teams, user } = this.state;
+
+    // Automatic redirection bulletproof guard
+    if (user && (view === 'landing' || view === 'login')) {
+       return <ModeSelector setView={this.setView} setGameMode={this.setGameMode} />;
+    }
 
     switch (view) {
       case 'landing':
@@ -421,7 +457,7 @@ class App extends Component {
           />
         );
       case 'profile':
-        return <UserProfile />;
+        return <UserProfile setView={this.setView} />;
       case 'auction':
         return (
           <AuctionDashboard
@@ -452,6 +488,10 @@ class App extends Component {
         );
       case 'results':
         return <ResultsPage roomCode={roomCode} teams={teams} myTeamId={this.state.myTeamId} setView={this.setView} />;
+      case 'rules':
+        return <GameRules setView={this.setView} />;
+      case 'admin':
+        return <AdminDashboard setView={this.setView} />;
       default:
         return <LandingPage setView={this.setView} />;
     }
@@ -471,21 +511,39 @@ class App extends Component {
   render() {
     if (this.state.authLoading) {
       return (
-        <div className="App flex flex-col min-h-screen justify-center items-center">
-          <div className="text-2xl text-accent animate-pulse font-black tracking-widest">CONNECTING TO LOBBY...</div>
+        <div className="App flex flex-col min-h-screen justify-center items-center relative z-0 bg-dark">
+          <video autoPlay loop muted playsInline style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: 0, opacity: 0.5, pointerEvents: 'none' }}>
+            <source src="/bg-video.mp4" type="video/mp4" />
+          </video>
+          <div className="text-2xl text-accent animate-pulse font-black tracking-widest relative z-10">CONNECTING TO LOBBY...</div>
         </div>
       );
     }
 
     return (
-      <div className="App flex flex-col min-h-screen">
-        <nav className="navbar">
+      <div className="App flex flex-col min-h-screen relative z-0 bg-dark">
+        {!this.state.user ? (
+          <video autoPlay loop muted playsInline style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: 0, opacity: 0.5, pointerEvents: 'none' }}>
+            <source src="/bg-video.mp4" type="video/mp4" />
+          </video>
+        ) : (
+          <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', zIndex: 0, opacity: 0.2, pointerEvents: 'none', backgroundImage: 'url(/ipl.png)', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }}></div>
+        )}
+        <nav className="navbar relative z-10 glass-nav">
           <div className="flex items-center gap-3 cursor-pointer" onClick={() => this.setView(this.state.user ? 'modeSelect' : 'landing')}>
-            <div className="logo-box">IPL</div>
+            <div className="logo-box">APL</div>
             <div className="font-black text-2xl text-accent tracking-wide">AUCTION</div>
           </div>
           {this.state.user && (
             <div className="flex items-center gap-6">
+              {this.state.email === 'admin@aplauction.com' && (
+                <button
+                  className="btn btn-primary px-4 py-2 text-xs font-bold"
+                  onClick={() => this.setView('admin')}
+                >
+                  DASHBOARD
+                </button>
+              )}
               {this.state.roomCode && (
                 <div className="glass px-4 py-2 text-sm font-bold flex items-center gap-2">
                   ROOM: <span className="text-accent">{this.state.roomCode}</span>
@@ -509,7 +567,7 @@ class App extends Component {
             </div>
           )}
         </nav>
-        <div className="p-8 flex-1 flex flex-col">
+        <div className="p-8 flex-1 flex flex-col relative z-10">
           {this.renderView()}
         </div>
       </div>

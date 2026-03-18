@@ -1,7 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { getDatabase } from "firebase/database";
 import { getAnalytics } from "firebase/analytics";
-import { getAuth } from "firebase/auth";
+import { getAuth, setPersistence, browserLocalPersistence } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 // Configured with user's project keys
 const firebaseConfig = {
@@ -18,13 +18,20 @@ const firebaseConfig = {
 let auth = null;
 let db = null;
 let analytics = null;
+let firestore = null;
 
 try {
   const app = initializeApp(firebaseConfig);
   auth = getAuth(app);
+  
+  // Enforce local persistence
+  setPersistence(auth, browserLocalPersistence)
+    .then(() => console.log("Persistence set to local"))
+    .catch((err) => console.error("Persistence error:", err));
+
   db = getDatabase(app);
   analytics = getAnalytics(app);
-  const firestore = getFirestore(app);
+  firestore = getFirestore(app);
   console.log("Firebase initialized successfully");
 } catch (error) {
   console.error("Firebase initialization failed:", error);

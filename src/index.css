@@ -799,6 +799,47 @@ label {
   z-index: 1000;
 }
 
+/* Computer Bid Popups */
+.bid-popup {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-20px);
+  padding: 12px 24px;
+  border-radius: 50px;
+  font-weight: 800;
+  font-size: 1.1rem;
+  z-index: 10000;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  animation: bid-pop-in 1.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  pointer-events: none;
+  border: 2px solid transparent;
+  color: white;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  backdrop-filter: blur(8px);
+}
+
+.bid-popup--ai {
+  background: linear-gradient(135deg, rgba(0, 28, 88, 0.9), rgba(0, 82, 155, 0.9));
+  border-color: var(--secondary-color);
+  box-shadow: 0 10px 30px rgba(212, 175, 55, 0.3);
+}
+
+.bid-popup--user {
+  background: linear-gradient(135deg, rgba(0, 208, 132, 0.9), rgba(0, 82, 155, 0.9));
+  border-color: #ffffff;
+  box-shadow: 0 10px 30px rgba(0, 208, 132, 0.3);
+}
+
+@keyframes bid-pop-in {
+  0% { opacity: 0; transform: translateX(-50%) translateY(-50px) scale(0.8); }
+  15% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1.1); }
+  25% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+  85% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-30px) scale(0.9); }
+}
+
 .logo-box {
   width: 44px;
   height: 44px;
