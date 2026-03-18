@@ -228,7 +228,7 @@ class LoginPage extends Component {
   };
 
   render() {
-    const { isLogin, email, password, username, error, loading, signupSuccess, otpSent, userOtpInput } = this.state;
+    const { isLogin, email, password, username, error, loading, signupSuccess, otpSent, userOtpInput, resendTimer, canResend } = this.state;
 
     if (otpSent) {
       return (
