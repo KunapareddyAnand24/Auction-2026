@@ -51,6 +51,66 @@ class LoginPage extends Component {
     otpSent: false,
     userOtpInput: '',
     generatedOtp: '',
+    resendTimer: 30,
+    canResend: false,
+  };
+
+  resendInterval = null;
+
+  componentWillUnmount() {
+    if (this.resendInterval) clearInterval(this.resendInterval);
+  }
+
+  startResendTimer = () => {
+    if (this.resendInterval) clearInterval(this.resendInterval);
+    this.setState({ resendTimer: 30, canResend: false });
+    this.resendInterval = setInterval(() => {
+      this.setState(prevState => {
+        if (prevState.resendTimer <= 1) {
+          clearInterval(this.resendInterval);
+          return { resendTimer: 0, canResend: true };
+        }
+        return { resendTimer: prevState.resendTimer - 1 };
+      });
+    }, 1000);
+  };
+
+  handleResendOTP = async () => {
+    const { email, username } = this.state;
+    this.setState({ loading: true, error: '' });
+
+    const newOtp = email === 'admin@aplauction.com' ? '123456' : Math.floor(100000 + Math.random() * 900000).toString();
+    this.setState({ generatedOtp: newOtp });
+
+    // Bypass actual email sending for admin
+    if (email === 'admin@aplauction.com') {
+      this.setState({ loading: false });
+      this.startResendTimer();
+      return;
+    }
+
+    const SERVICE_ID = "Auction";
+    const TEMPLATE_ID = "template_jbushsq";
+    const PUBLIC_KEY = "dZkHbznBmubYoRBoy";
+
+    const templateParams = {
+      to_email: email,
+      passcode: newOtp,
+      time: new Date().toLocaleTimeString(),
+      to_name: username,
+    };
+
+    try {
+      console.log("Resending OTP...", templateParams);
+      const response = await emailjs.send(SERVICE_ID, TEMPLATE_ID, templateParams, PUBLIC_KEY);
+      console.log("EmailJS Resend Success:", response.status, response.text);
+      this.startResendTimer();
+    } catch (emailErr) {
+      console.error("EmailJS Resend Error:", emailErr);
+      this.setState({ error: `Resend Error: ${emailErr?.text || emailErr?.message}` });
+    } finally {
+      this.setState({ loading: false });
+    }
   };
 
   handleAuthAction = async () => {
@@ -71,9 +131,11 @@ class LoginPage extends Component {
         // Step 1: Generate and send OTP for SIGNUP
         const otp = email === 'admin@aplauction.com' ? '123456' : Math.floor(100000 + Math.random() * 900000).toString();
         this.setState({ generatedOtp: otp, loading: true });
+        console.log("Current email:", email, "Is Admin:", email === 'admin@aplauction.com');
 
         // Bypass actual email sending for the admin demo account
         if (email === 'admin@aplauction.com') {
+          console.log("Admin bypass triggered. Code is 123456");
           this.setState({ otpSent: true, loading: false });
           return;
         }
@@ -91,8 +153,11 @@ class LoginPage extends Component {
         };
 
         try {
-          await emailjs.send(SERVICE_ID, TEMPLATE_ID, templateParams, PUBLIC_KEY);
+          console.log("Sending Initial OTP...", templateParams);
+          const response = await emailjs.send(SERVICE_ID, TEMPLATE_ID, templateParams, PUBLIC_KEY);
+          console.log("EmailJS Initial Success:", response.status, response.text);
           this.setState({ otpSent: true });
+          this.startResendTimer();
         } catch (emailErr) {
           console.error("EmailJS Error:", emailErr);
           const errorMsg = emailErr?.text || emailErr?.message || "Check your EmailJS credentials";
@@ -188,6 +253,22 @@ class LoginPage extends Component {
               />
             </div>
 
+            <div className="resend-container mb-8">
+              {canResend ? (
+                <button 
+                  className="btn-resend" 
+                  onClick={this.handleResendOTP}
+                  disabled={loading}
+                >
+                  Resend Code
+                </button>
+              ) : (
+                <span className="timer-text">
+                  Resend code in <strong className="text-accent">{resendTimer}s</strong>
+                </span>
+              )}
+            </div>
+
             <button 
               className="btn btn-primary w-full py-4 text-lg mb-4"
               onClick={this.handleVerifyOTP}
@@ -195,8 +276,11 @@ class LoginPage extends Component {
             >
               Verify OTP
             </button>
-            <button className="btn-guest" onClick={() => this.setState({ otpSent: false })}>
-              Back to Login
+            <button className="btn-guest" onClick={() => {
+              if (this.resendInterval) clearInterval(this.resendInterval);
+              this.setState({ otpSent: false });
+            }}>
+              Back to Sign Up
             </button>
           </div>
         </div>
