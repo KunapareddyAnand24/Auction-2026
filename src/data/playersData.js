@@ -1978,6 +1978,216 @@ const playersData = [
     "status": "available",
     "soldPrice": 0,
     "soldTo": null
+  },
+  {
+    "id": 111,
+    "name": "Devon Conway",
+    "role": "Wicketkeeper",
+    "basePrice": 2,
+    "rating": 91,
+    "image": "https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?q=80&w=200&auto=format&fit=crop",
+    "stats": { "matches": 65, "runs": 2150, "wickets": 0, "strikeRate": 135.2, "economy": 0 },
+    "status": "available", "soldPrice": 0, "soldTo": null
+  },
+  {
+    "id": 112,
+    "name": "Daryl Mitchell",
+    "role": "All-rounder",
+    "basePrice": 1.5,
+    "rating": 89,
+    "image": "https://images.unsplash.com/photo-1531415074968-036ba1b575da?q=80&w=200&auto=format&fit=crop",
+    "stats": { "matches": 58, "runs": 1450, "wickets": 12, "strikeRate": 138.5, "economy": 8.5 },
+    "status": "available", "soldPrice": 0, "soldTo": null
+  },
+  {
+    "id": 113,
+    "name": "Rachin Ravindra",
+    "role": "All-rounder",
+    "basePrice": 1,
+    "rating": 88,
+    "image": "https://images.unsplash.com/photo-1599420186946-7b6fb4e297f0?q=80&w=200&auto=format&fit=crop",
+    "stats": { "matches": 22, "runs": 650, "wickets": 18, "strikeRate": 142.1, "economy": 7.8 },
+    "status": "available", "soldPrice": 0, "soldTo": null
+  },
+  {
+    "id": 114,
+    "name": "Ajinkya Rahane",
+    "role": "Batsman",
+    "basePrice": 0.5,
+    "rating": 84,
+    "image": "https://images.unsplash.com/photo-1624526267942-ab0ff8a3e972?q=80&w=200&auto=format&fit=crop",
+    "stats": { "matches": 158, "runs": 4400, "wickets": 1, "strikeRate": 123.4, "economy": 0 },
+    "status": "available", "soldPrice": 0, "soldTo": null
+  },
+  {
+    "id": 115,
+    "name": "Ambati Rayudu",
+    "role": "Batsman",
+    "basePrice": 0.5,
+    "rating": 85,
+    "image": "https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?q=80&w=200&auto=format&fit=crop",
+    "stats": { "matches": 188, "runs": 4329, "wickets": 0, "strikeRate": 127.5, "economy": 0 },
+    "status": "available", "soldPrice": 0, "soldTo": null
+  },
+  {
+    "id": 116,
+    "name": "Rahmanullah Gurbaz",
+    "role": "Wicketkeeper",
+    "basePrice": 1,
+    "rating": 86,
+    "image": "https://images.unsplash.com/photo-1599420186946-7b6fb4e297f0?q=80&w=200&auto=format&fit=crop",
+    "stats": { "matches": 45, "runs": 1250, "wickets": 0, "strikeRate": 142.8, "economy": 0 },
+    "status": "available", "soldPrice": 0, "soldTo": null
+  },
+  {
+    "id": 117,
+    "name": "Noor Ahmad",
+    "role": "Bowler",
+    "basePrice": 1,
+    "rating": 87,
+    "image": "https://images.unsplash.com/photo-1631193512748-9993bd39715b?q=80&w=200&auto=format&fit=crop",
+    "stats": { "matches": 32, "runs": 45, "wickets": 42, "strikeRate": 85.4, "economy": 7.2 },
+    "status": "available", "soldPrice": 0, "soldTo": null
+  },
+  {
+    "id": 118,
+    "name": "Sai Kishore",
+    "role": "Bowler",
+    "basePrice": 0.5,
+    "rating": 82,
+    "image": "https://images.unsplash.com/photo-1531415074968-036ba1b575da?q=80&w=200&auto=format&fit=crop",
+    "stats": { "matches": 25, "runs": 65, "wickets": 28, "strikeRate": 92.4, "economy": 7.4 },
+    "status": "available", "soldPrice": 0, "soldTo": null
+  },
+  {
+    "id": 119,
+    "name": "Abhinav Manohar",
+    "role": "Batsman",
+    "basePrice": 0.5,
+    "rating": 81,
+    "image": "https://images.unsplash.com/photo-1624526267942-ab0ff8a3e972?q=80&w=200&auto=format&fit=crop",
+    "stats": { "matches": 18, "runs": 380, "wickets": 0, "strikeRate": 145.2, "economy": 0 },
+    "status": "available", "soldPrice": 0, "soldTo": null
+  },
+  {
+    "id": 120,
+    "name": "Kyle Mayers",
+    "role": "All-rounder",
+    "basePrice": 1,
+    "rating": 86,
+    "image": "https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?q=80&w=200&auto=format&fit=crop",
+    "stats": { "matches": 35, "runs": 850, "wickets": 12, "strikeRate": 155.6, "economy": 8.9 },
+    "status": "available", "soldPrice": 0, "soldTo": null
+  },
+  {
+    "id": 121,
+    "name": "Romario Shepherd",
+    "role": "All-rounder",
+    "basePrice": 0.5,
+    "rating": 83,
+    "image": "https://images.unsplash.com/photo-1631193512748-9993bd39715b?q=80&w=200&auto=format&fit=crop",
+    "stats": { "matches": 28, "runs": 350, "wickets": 24, "strikeRate": 165.4, "economy": 9.2 },
+    "status": "available", "soldPrice": 0, "soldTo": null
+  },
+  {
+    "id": 122,
+    "name": "Alzarri Joseph",
+    "role": "Bowler",
+    "basePrice": 1,
+    "rating": 85,
+    "image": "https://images.unsplash.com/photo-1599420186946-7b6fb4e297f0?q=80&w=200&auto=format&fit=crop",
+    "stats": { "matches": 42, "runs": 85, "wickets": 48, "strikeRate": 95.2, "economy": 8.8 },
+    "status": "available", "soldPrice": 0, "soldTo": null
+  },
+  {
+    "id": 123,
+    "name": "Shivam Mavi",
+    "role": "Bowler",
+    "basePrice": 0.5,
+    "rating": 82,
+    "image": "https://images.unsplash.com/photo-1624526267942-ab0ff8a3e972?q=80&w=200&auto=format&fit=crop",
+    "stats": { "matches": 32, "runs": 120, "wickets": 33, "strikeRate": 120.4, "economy": 8.5 },
+    "status": "available", "soldPrice": 0, "soldTo": null
+  },
+  {
+    "id": 124,
+    "name": "Kamlesh Nagarkoti",
+    "role": "Bowler",
+    "basePrice": 0.5,
+    "rating": 80,
+    "image": "https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?q=80&w=200&auto=format&fit=crop",
+    "stats": { "matches": 15, "runs": 45, "wickets": 12, "strikeRate": 115.2, "economy": 8.9 },
+    "status": "available", "soldPrice": 0, "soldTo": null
+  },
+  {
+    "id": 125,
+    "name": "Arjun Tendulkar",
+    "role": "Bowler",
+    "basePrice": 0.5,
+    "rating": 75,
+    "image": "https://images.unsplash.com/photo-1631193512748-9993bd39715b?q=80&w=200&auto=format&fit=crop",
+    "stats": { "matches": 4, "runs": 15, "wickets": 3, "strikeRate": 85.2, "economy": 9.5 },
+    "status": "available", "soldPrice": 0, "soldTo": null
+  },
+  {
+    "id": 126,
+    "name": "Hrithik Shokeen",
+    "role": "All-rounder",
+    "basePrice": 0.5,
+    "rating": 79,
+    "image": "https://images.unsplash.com/photo-1531415074968-036ba1b575da?q=80&w=200&auto=format&fit=crop",
+    "stats": { "matches": 12, "runs": 110, "wickets": 5, "strikeRate": 118.4, "economy": 8.3 },
+    "status": "available", "soldPrice": 0, "soldTo": null
+  },
+  {
+    "id": 127,
+    "name": "Ramandeep Singh",
+    "role": "All-rounder",
+    "basePrice": 0.5,
+    "rating": 80,
+    "image": "https://images.unsplash.com/photo-1599420186946-7b6fb4e297f0?q=80&w=200&auto=format&fit=crop",
+    "stats": { "matches": 10, "runs": 95, "wickets": 6, "strikeRate": 125.2, "economy": 8.2 },
+    "status": "available", "soldPrice": 0, "soldTo": null
+  },
+  {
+    "id": 128,
+    "name": "Anukul Roy",
+    "role": "All-rounder",
+    "basePrice": 0.5,
+    "rating": 81,
+    "image": "https://images.unsplash.com/photo-1624526267942-ab0ff8a3e972?q=80&w=200&auto=format&fit=crop",
+    "stats": { "matches": 18, "runs": 145, "wickets": 12, "strikeRate": 128.4, "economy": 7.8 },
+    "status": "available", "soldPrice": 0, "soldTo": null
+  },
+  {
+    "id": 129,
+    "name": "Vaibhav Arora",
+    "role": "Bowler",
+    "basePrice": 0.5,
+    "rating": 82,
+    "image": "https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?q=80&w=200&auto=format&fit=crop",
+    "stats": { "matches": 14, "runs": 10, "wickets": 15, "strikeRate": 82.4, "economy": 8.9 },
+    "status": "available", "soldPrice": 0, "soldTo": null
+  },
+  {
+    "id": 130,
+    "name": "Kulwant Khejroliya",
+    "role": "Bowler",
+    "basePrice": 0.5,
+    "rating": 78,
+    "image": "https://images.unsplash.com/photo-1631193512748-9993bd39715b?q=80&w=200&auto=format&fit=crop",
+    "stats": { "matches": 9, "runs": 5, "wickets": 8, "strikeRate": 78.4, "economy": 9.2 },
+    "status": "available", "soldPrice": 0, "soldTo": null
+  },
+  {
+    "id": 131,
+    "name": "Yudhvir Singh Charak",
+    "role": "Bowler",
+    "basePrice": 0.5,
+    "rating": 77,
+    "image": "https://images.unsplash.com/photo-1599420186946-7b6fb4e297f0?q=80&w=200&auto=format&fit=crop",
+    "stats": { "matches": 6, "runs": 20, "wickets": 5, "strikeRate": 95.2, "economy": 8.7 },
+    "status": "available", "soldPrice": 0, "soldTo": null
   }
 ];
 

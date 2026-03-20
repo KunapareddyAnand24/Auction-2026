@@ -10,7 +10,7 @@ import TransferWindow from './components/TransferWindow';
 import UserProfile from './components/UserProfile';
 import GameRules from './components/GameRules';
 import AdminDashboard from './components/AdminDashboard';
-import { ref, onValue } from 'firebase/database';
+import { ref, onValue, get } from 'firebase/database';
 import { db, auth } from './firebase';
 import emailjs from '@emailjs/browser';
 import {
@@ -400,11 +400,14 @@ class App extends Component {
     };
     this.roomListener = null;
     this.authListener = null;
+
+    // Session persistence key
+    this.SESSION_KEY = 'apl_session';
   }
 
   componentDidMount() {
     if (auth) {
-      this.authListener = onAuthStateChanged(auth, (user) => {
+      this.authListener = onAuthStateChanged(auth, async (user) => {
         if (user) {
           this.setState({
             user: user.displayName || user.email || 'Guest Manager',
@@ -427,8 +430,11 @@ class App extends Component {
             }).catch(err => console.error("Error fetching user doc", err));
           }
 
-          // Auto route to mode select if they were on landing or login
-          if (this.state.view === 'landing' || this.state.view === 'login') {
+          // Try to restore session from localStorage
+          const restored = await this.tryRestoreSession();
+
+          // Auto route to mode select if they were on landing or login and no session restored
+          if (!restored && (this.state.view === 'landing' || this.state.view === 'login')) {
             this.setState({ view: 'modeSelect' });
           }
         } else {
@@ -450,6 +456,8 @@ class App extends Component {
   componentDidUpdate(prevProps, prevState) {
     if (this.state.roomCode && this.state.roomCode !== prevState.roomCode) {
       this.listenToRoom(this.state.roomCode);
+      // Save session when room code is set
+      setTimeout(() => this.saveSession(), 100);
     }
   }
 
@@ -466,7 +474,12 @@ class App extends Component {
       const data = snapshot.val();
       if (data) {
         this.setState({ teams: data.teams || [] });
-        if (data.maxPlayers) {
+        
+        // Use playersPool from room data if it exists (randomized at room creation)
+        if (data.playersPool) {
+          this.setState({ players: data.playersPool });
+        } else if (data.maxPlayers) {
+          // Fallback for legacy rooms
           this.setState({ players: playersData.slice(0, data.maxPlayers) });
         }
 
@@ -486,6 +499,7 @@ class App extends Component {
         } else if (data.status === 'finished') {
           if (this.state.view === 'selection' || this.state.view === 'auction') {
             this.setState({ view: 'results' });
+            this.clearSession();
           }
         }
       }
@@ -499,6 +513,105 @@ class App extends Component {
   setMyTeamId = (teamId) => this.setState({ myTeamId: teamId });
   setIsHost = (val) => this.setState({ isHost: val });
   setGameMode = (mode) => this.setState({ gameMode: mode });
+
+  // --- Session Persistence ---
+  saveSession = () => {
+    const { roomCode, myTeamId, isHost, gameMode } = this.state;
+    if (roomCode) {
+      const session = { roomCode, myTeamId, isHost, gameMode, savedAt: Date.now() };
+      try {
+        localStorage.setItem(this.SESSION_KEY, JSON.stringify(session));
+        console.log('Session saved:', session);
+      } catch (e) {
+        console.error('Failed to save session:', e);
+      }
+    }
+  };
+
+  clearSession = () => {
+    try {
+      localStorage.removeItem(this.SESSION_KEY);
+      console.log('Session cleared');
+    } catch (e) {
+      console.error('Failed to clear session:', e);
+    }
+  };
+
+  tryRestoreSession = async () => {
+    try {
+      const raw = localStorage.getItem(this.SESSION_KEY);
+      if (!raw) return false;
+
+      const session = JSON.parse(raw);
+      if (!session.roomCode) return false;
+
+      // Session expires after 6 hours
+      if (Date.now() - session.savedAt > 6 * 60 * 60 * 1000) {
+        this.clearSession();
+        return false;
+      }
+
+      // Validate room still exists in Firebase
+      if (!db) return false;
+      const roomRef = ref(db, `rooms/${session.roomCode}`);
+      const snapshot = await get(roomRef);
+      if (!snapshot.exists()) {
+        console.log('Room no longer exists, clearing session');
+        this.clearSession();
+        return false;
+      }
+
+      const roomData = snapshot.val();
+
+      // Check if the room is already finished
+      if (roomData.status === 'finished') {
+        this.clearSession();
+        return false;
+      }
+
+      // Validate user's team still exists
+      const teamExists = roomData.teams && roomData.teams.some(t => t.id === session.myTeamId);
+      if (!teamExists) {
+        this.clearSession();
+        return false;
+      }
+
+      // Restore state
+      this.setState({
+        roomCode: session.roomCode,
+        myTeamId: session.myTeamId,
+        isHost: session.isHost,
+        gameMode: session.gameMode || 'multiplayer',
+        teams: roomData.teams || [],
+      });
+
+      // Navigate to appropriate view based on room status
+      const status = roomData.status;
+      if (status === 'active' || status === 'waiting') {
+        this.setState({ view: 'auction' });
+      } else if (status === 'transfer') {
+        this.setState({ view: 'transfer' });
+      } else if (status === 'selection') {
+        this.setState({ view: 'selection' });
+      } else {
+        this.setState({ view: 'auction' });
+      }
+
+      console.log('Session restored successfully');
+      return true;
+    } catch (e) {
+      console.error('Failed to restore session:', e);
+      this.clearSession();
+      return false;
+    }
+  };
+
+  handleContinueGame = async () => {
+    const restored = await this.tryRestoreSession();
+    if (!restored) {
+      alert('No active game session found. The game may have ended or the room was closed.');
+    }
+  };
 
   renderView() {
     const { view, roomCode, players, teams, user } = this.state;
@@ -514,7 +627,7 @@ class App extends Component {
       case 'login':
         return <LoginPage setView={this.setView} setUser={this.setUser} />;
       case 'modeSelect':
-        return <ModeSelector setView={this.setView} setGameMode={this.setGameMode} />;
+        return <ModeSelector setView={this.setView} setGameMode={this.setGameMode} onContinueGame={this.handleContinueGame} hasActiveSession={!!localStorage.getItem(this.SESSION_KEY)} />;
       case 'room':
         return (
           <RoomPage
@@ -583,6 +696,7 @@ class App extends Component {
 
   handleLogout = async () => {
     try {
+      this.clearSession();
       if (this.state.roomCode) {
         this.setRoomCode(null);
       }

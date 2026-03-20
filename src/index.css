@@ -1937,3 +1937,216 @@ label {
 .prediction-stat-row:last-child {
   border-bottom: none;
 }
+
+/* ============================================
+   UNSOLD OVERLAY
+   ============================================ */
+.unsold-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(255, 30, 30, 0.15);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  animation: unsoldFadeIn 0.4s ease-out;
+}
+
+@keyframes unsoldFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.unsold-card {
+  background: linear-gradient(135deg, rgba(40, 10, 10, 0.95), rgba(80, 20, 20, 0.9));
+  border: 2px solid rgba(255, 77, 77, 0.5);
+  border-radius: 24px;
+  padding: 3rem 2.5rem;
+  text-align: center;
+  max-width: 420px;
+  width: 90%;
+  box-shadow: 0 25px 60px rgba(255, 30, 30, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  animation: unsoldSlideUp 0.5s ease-out;
+}
+
+@keyframes unsoldSlideUp {
+  from { transform: translateY(30px) scale(0.95); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.unsold-emoji {
+  font-size: 4rem;
+  display: block;
+  margin-bottom: 1rem;
+  animation: unsoldShake 0.6s ease-in-out;
+}
+
+@keyframes unsoldShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-8px); }
+  40% { transform: translateX(8px); }
+  60% { transform: translateX(-5px); }
+  80% { transform: translateX(5px); }
+}
+
+.unsold-title {
+  font-size: 2.5rem;
+  font-weight: 900;
+  color: var(--danger);
+  letter-spacing: 6px;
+  margin-bottom: 0.75rem;
+  text-shadow: 0 0 20px rgba(255, 77, 77, 0.5);
+}
+
+.unsold-subtitle {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 1rem;
+  margin-bottom: 1rem;
+  font-weight: 500;
+}
+
+.unsold-note {
+  margin-top: 1.25rem;
+  padding: 0.6rem 1.2rem;
+  background: rgba(212, 175, 55, 0.15);
+  border: 1px solid rgba(212, 175, 55, 0.3);
+  border-radius: 8px;
+  color: var(--secondary-color);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+/* ============================================
+   RE-AUCTION BANNER
+   ============================================ */
+.reauction-banner {
+  position: fixed;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  background: linear-gradient(135deg, rgba(212, 175, 55, 0.2), rgba(249, 217, 118, 0.15));
+  border: 1px solid rgba(212, 175, 55, 0.5);
+  border-radius: 12px;
+  padding: 0.75rem 2rem;
+  font-weight: 800;
+  font-size: 0.9rem;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--secondary-color);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 4px 30px rgba(212, 175, 55, 0.2);
+  animation: reAuctionPulse 2s ease-in-out infinite;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  white-space: nowrap;
+}
+
+.reauction-banner-icon {
+  font-size: 1.3rem;
+  animation: reAuctionSpin 3s linear infinite;
+}
+
+@keyframes reAuctionSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes reAuctionPulse {
+  0%, 100% {
+    box-shadow: 0 4px 30px rgba(212, 175, 55, 0.2);
+    border-color: rgba(212, 175, 55, 0.4);
+  }
+  50% {
+    box-shadow: 0 4px 40px rgba(212, 175, 55, 0.4);
+    border-color: rgba(212, 175, 55, 0.7);
+  }
+}
+
+/* ============================================
+   UNSOLD BADGE
+   ============================================ */
+.unsold-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 77, 77, 0.15);
+  border: 1px solid rgba(255, 77, 77, 0.4);
+  color: var(--danger);
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* ============================================
+   CONTINUE GAME CARD
+   ============================================ */
+.continue-game-card {
+  border: 1px dashed rgba(212, 175, 55, 0.3) !important;
+  background: rgba(212, 175, 55, 0.03) !important;
+}
+
+.continue-game-card:hover {
+  border-color: rgba(212, 175, 55, 0.6) !important;
+  background: rgba(212, 175, 55, 0.08) !important;
+}
+
+.continue-game-card--disabled {
+  opacity: 0.5;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  background: rgba(255, 255, 255, 0.02) !important;
+  cursor: not-allowed;
+}
+
+.continue-game-card--disabled:hover {
+  border-color: rgba(255, 255, 255, 0.15) !important;
+  background: rgba(255, 255, 255, 0.03) !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.mode-card-badge--continue {
+  background: rgba(0, 208, 132, 0.15);
+  color: var(--success);
+  border: 1px solid rgba(0, 208, 132, 0.3);
+}
+
+.mode-card-badge--inactive {
+  background: rgba(160, 170, 186, 0.1) !important;
+  color: var(--text-secondary) !important;
+  border-color: rgba(160, 170, 186, 0.2) !important;
+}
+
+/* ============================================
+   AUCTION WAIT / PAUSE STYLES
+   ============================================ */
+.border-warning {
+  border-color: #ffc107 !important;
+}
+
+.text-warning {
+  color: #ffc107 !important;
+}
+
+.bg-success-light {
+  background: rgba(0, 208, 132, 0.1);
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

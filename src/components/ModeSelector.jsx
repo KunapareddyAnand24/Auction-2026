@@ -2,7 +2,7 @@ import React, { Component } from 'react';
 
 class ModeSelector extends Component {
   render() {
-    const { setView, setGameMode } = this.props;
+    const { setView, setGameMode, onContinueGame, hasActiveSession } = this.props;
 
     const modes = [
       {
@@ -66,6 +66,29 @@ class ModeSelector extends Component {
               </span>
             </div>
           ))}
+
+          {/* Continue Game Card */}
+          <div
+            className={`mode-card continue-game-card ${hasActiveSession ? '' : 'continue-game-card--disabled'}`}
+            onClick={() => {
+              if (hasActiveSession && onContinueGame) {
+                onContinueGame();
+              } else if (!hasActiveSession) {
+                alert('No active game session found. Start a new game first!');
+              }
+            }}
+          >
+            <span className="mode-card-icon">🔄</span>
+            <div className="mode-card-title">Continue Game</div>
+            <div className="mode-card-desc">
+              {hasActiveSession
+                ? 'Rejoin your ongoing auction. Resume right where you left off.'
+                : 'No active session detected. Start a new game to enable this option.'}
+            </div>
+            <span className={`mode-card-badge mode-card-badge--continue ${hasActiveSession ? '' : 'mode-card-badge--inactive'}`}>
+              {hasActiveSession ? '● Session Active' : '○ No Session'}
+            </span>
+          </div>
         </div>
       </div>
     );

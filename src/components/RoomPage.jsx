@@ -1,6 +1,7 @@
 import React, { Component } from 'react';
 import { ref, set, get, runTransaction } from 'firebase/database';
 import { db } from '../firebase';
+import playersData from '../data/playersData';
 
 class RoomPage extends Component {
     state = {
@@ -19,6 +20,15 @@ class RoomPage extends Component {
     generateRoomCode = () => {
         const code = Math.random().toString(36).substring(2, 8).toUpperCase();
         this.setState({ roomCode: code });
+    };
+
+    shuffleArray = (array) => {
+        const newArr = [...array];
+        for (let i = newArr.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [newArr[i], newArr[j]] = [newArr[j], newArr[i]];
+        }
+        return newArr;
     };
 
     handleMaxTeamsChange = (action) => {
@@ -58,7 +68,8 @@ class RoomPage extends Component {
         }
 
         try {
-            const maxPlayers = this.getPoolSize(maxTeams);
+            const poolSize = this.getPoolSize(maxTeams);
+            const randomizedPool = this.shuffleArray(playersData).slice(0, poolSize);
 
             const roomRef = ref(db, `rooms/${this.state.roomCode}`);
             await set(roomRef, {
@@ -68,7 +79,8 @@ class RoomPage extends Component {
                 currentBid: 0,
                 highestBidderId: null,
                 status: 'waiting',
-                maxPlayers: maxPlayers,
+                maxPlayers: poolSize,
+                playersPool: randomizedPool,
                 createdAt: new Date().toISOString()
             });
 
