@@ -2150,3 +2150,598 @@ label {
   from { opacity: 0; }
   to { opacity: 1; }
 }
+
+/* ============================================
+   AUCTION LAYOUT WRAPPER
+   ============================================ */
+.auction-layout-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  position: relative;
+}
+
+/* ============================================
+   SET BANNER
+   ============================================ */
+.set-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 10px 24px;
+  border-radius: 12px 12px 0 0;
+  background: linear-gradient(135deg, rgba(0, 28, 88, 0.95), rgba(0, 82, 155, 0.85));
+  border: 1px solid rgba(212, 175, 55, 0.4);
+  border-bottom: none;
+  font-size: 1rem;
+  font-weight: 900;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  color: var(--secondary-color);
+  text-shadow: 0 0 20px rgba(212, 175, 55, 0.5);
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 0;
+}
+
+.set-banner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(212, 175, 55, 0.07), transparent);
+  animation: shimmer 3s ease infinite;
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.set-banner-icon {
+  font-size: 1.4rem;
+}
+
+/* ============================================
+   STATUS BADGES
+   ============================================ */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.status-badge-live {
+  background: rgba(255, 77, 77, 0.15);
+  color: #ff4d4d;
+  border: 1px solid rgba(255, 77, 77, 0.4);
+  animation: live-pulse 1.5s ease infinite;
+}
+
+@keyframes live-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 77, 77, 0); }
+  50% { box-shadow: 0 0 10px 2px rgba(255, 77, 77, 0.3); }
+}
+
+.status-badge-paused {
+  background: rgba(255, 193, 7, 0.15);
+  color: #ffc107;
+  border: 1px solid rgba(255, 193, 7, 0.4);
+}
+
+.status-badge-waiting {
+  background: rgba(160, 170, 186, 0.15);
+  color: var(--text-secondary);
+  border: 1px solid rgba(160, 170, 186, 0.3);
+}
+
+/* ============================================
+   UNSOLD BUTTON
+   ============================================ */
+.unsold-btn {
+  background: rgba(255, 77, 77, 0.1);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  padding: 8px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 700;
+  font-family: 'Inter', sans-serif;
+  letter-spacing: 1px;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  transition: all 0.25s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  touch-action: manipulation;
+}
+
+.unsold-btn:hover {
+  background: var(--danger);
+  color: #fff;
+  box-shadow: 0 0 20px rgba(255, 77, 77, 0.4);
+  transform: translateY(-1px);
+}
+
+.unsold-btn:active {
+  transform: scale(0.97);
+}
+
+/* ============================================
+   MODAL OVERLAY (Unsold Confirm)
+   ============================================ */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease;
+}
+
+.modal-card {
+  background: rgba(15, 20, 35, 0.98);
+  border: 1px solid rgba(255, 77, 77, 0.4);
+  border-radius: 20px;
+  padding: 2.5rem;
+  max-width: 400px;
+  width: 90%;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6), 0 0 40px rgba(255, 77, 77, 0.1);
+  animation: modal-in 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes modal-in {
+  from { transform: scale(0.85); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+/* ============================================
+   PAUSED OVERLAY (inside timer card)
+   ============================================ */
+.paused-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(5, 5, 8, 0.92);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+  border-radius: 16px;
+  padding: 1rem;
+  gap: 12px;
+}
+
+/* ============================================
+   SET COMPLETE OVERLAY
+   ============================================ */
+.set-complete-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 90;
+  animation: fadeIn 0.3s ease;
+}
+
+.set-complete-card {
+  background: linear-gradient(135deg, rgba(0, 28, 88, 0.98), rgba(0, 82, 155, 0.9));
+  border: 2px solid var(--secondary-color);
+  border-radius: 24px;
+  padding: 3rem 4rem;
+  text-align: center;
+  box-shadow: 0 0 60px rgba(212, 175, 55, 0.2);
+  animation: modal-in 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* ============================================
+   UNSOLD BADGE PANEL (inside player card)
+   ============================================ */
+.unsold-badge-panel {
+  background: rgba(255, 193, 7, 0.08);
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.75rem;
+  color: #ffc107;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+/* ============================================
+   CHAT PANEL
+   ============================================ */
+.chat-toggle-bar {
+  display: flex;
+  justify-content: center;
+  margin-top: 12px;
+}
+
+.chat-toggle-btn {
+  background: rgba(0, 82, 155, 0.2);
+  border: 1px solid rgba(0, 82, 155, 0.4);
+  color: var(--text-secondary);
+  padding: 6px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  transition: all 0.2s ease;
+}
+
+.chat-toggle-btn:hover {
+  background: rgba(0, 82, 155, 0.35);
+  color: var(--text-primary);
+}
+
+.chat-panel {
+  background: rgba(10, 15, 28, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  margin-top: 4px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: 320px;
+  animation: fadeIn 0.3s ease;
+}
+
+.chat-header {
+  padding: 10px 16px;
+  background: rgba(0, 28, 88, 0.8);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: var(--secondary-color);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.chat-online-dot {
+  width: 7px;
+  height: 7px;
+  background: var(--success);
+  border-radius: 50%;
+  animation: live-pulse 1.5s ease infinite;
+  margin-left: auto;
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 140px;
+  max-height: 200px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.1) transparent;
+}
+
+.chat-messages::-webkit-scrollbar { width: 4px; }
+.chat-messages::-webkit-scrollbar-track { background: transparent; }
+.chat-messages::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 2px; }
+
+.chat-empty {
+  text-align: center;
+  color: var(--text-secondary);
+  font-style: italic;
+  font-size: 0.8rem;
+  margin: auto;
+  padding: 1rem;
+}
+
+.chat-bubble {
+  display: flex;
+  flex-direction: column;
+  max-width: 80%;
+  animation: fadeIn 0.2s ease;
+}
+
+.chat-bubble--me {
+  align-self: flex-end;
+  align-items: flex-end;
+}
+
+.chat-bubble--other {
+  align-self: flex-start;
+  align-items: flex-start;
+}
+
+.chat-sender {
+  font-size: 0.67rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--secondary-color);
+  margin-bottom: 3px;
+}
+
+.chat-text {
+  padding: 7px 12px;
+  border-radius: 12px;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.chat-bubble--me .chat-text {
+  background: linear-gradient(135deg, rgba(212, 175, 55, 0.2), rgba(212, 175, 55, 0.1));
+  border: 1px solid rgba(212, 175, 55, 0.25);
+  color: #fff;
+  border-radius: 12px 12px 4px 12px;
+}
+
+.chat-bubble--other .chat-text {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  color: var(--text-primary);
+  border-radius: 12px 12px 12px 4px;
+}
+
+.chat-time {
+  font-size: 0.62rem;
+  color: var(--text-secondary);
+  margin-top: 3px;
+  opacity: 0.7;
+}
+
+.chat-input-row {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.chat-input {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 8px 12px;
+  border-radius: 8px;
+  color: #fff;
+  font-size: 0.85rem;
+  font-family: 'Inter', sans-serif;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.chat-input:focus {
+  border-color: rgba(212, 175, 55, 0.5);
+}
+
+.chat-send-btn {
+  background: linear-gradient(135deg, var(--secondary-color), #f9d976);
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 1rem;
+  cursor: pointer;
+  font-weight: 700;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.chat-send-btn:hover:not(:disabled) {
+  transform: scale(1.05);
+  box-shadow: 0 0 12px rgba(212, 175, 55, 0.4);
+}
+
+.chat-send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ============================================
+   VOICE CHAT PANEL
+   ============================================ */
+.voice-panel {
+  background: rgba(10, 15, 28, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 16px;
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.voice-header {
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: var(--secondary-color);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.voice-connected-badge {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.68rem;
+  color: var(--success);
+  background: rgba(0, 208, 132, 0.1);
+  border: 1px solid rgba(0, 208, 132, 0.3);
+  padding: 2px 8px;
+  border-radius: 20px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+}
+
+.voice-live-dot {
+  width: 7px;
+  height: 7px;
+  background: var(--success);
+  border-radius: 50%;
+  animation: live-pulse 1.5s ease infinite;
+}
+
+.voice-error {
+  background: rgba(255, 77, 77, 0.1);
+  border: 1px solid rgba(255, 77, 77, 0.3);
+  color: var(--danger);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.8rem;
+}
+
+.voice-controls {
+  display: flex;
+  gap: 10px;
+}
+
+.voice-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 1.4rem;
+  font-family: 'Inter', sans-serif;
+  transition: all 0.2s ease;
+}
+
+.voice-btn span {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.voice-btn--active {
+  border-color: rgba(0, 208, 132, 0.4);
+  background: rgba(0, 208, 132, 0.08);
+  color: var(--success);
+}
+
+.voice-btn--active:hover {
+  background: rgba(0, 208, 132, 0.15);
+  box-shadow: 0 0 15px rgba(0, 208, 132, 0.2);
+}
+
+.voice-btn--muted {
+  border-color: rgba(255, 77, 77, 0.4);
+  background: rgba(255, 77, 77, 0.08);
+  color: var(--danger);
+}
+
+.voice-btn--leave {
+  border-color: rgba(255, 77, 77, 0.3);
+  background: rgba(255, 77, 77, 0.06);
+  color: var(--danger);
+}
+
+.voice-btn--leave:hover {
+  background: var(--danger);
+  color: #fff;
+  box-shadow: 0 0 15px rgba(255, 77, 77, 0.3);
+}
+
+.voice-waiting {
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  font-style: italic;
+  padding: 4px 0;
+}
+
+/* ============================================
+   PT-20 HELPER
+   ============================================ */
+.pt-20 { padding-top: 5rem; }
+
+/* ============================================
+   MAX-W-SM HELPER
+   ============================================ */
+.max-w-sm { max-width: 24rem; }
+
+/* ============================================
+   RING HELPER (for resume button notification)
+   ============================================ */
+.ring-2 { box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.5); }
+.ring-accent { box-shadow: 0 0 0 2px var(--secondary-color); }
+
+/* ============================================
+   REST BUTTON
+   ============================================ */
+.rest-btn {
+  background: rgba(255, 152, 0, 0.1);
+  border: 1px solid #ff9800;
+  color: #ff9800;
+  padding: 8px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 700;
+  font-family: 'Inter', sans-serif;
+  letter-spacing: 1px;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  transition: all 0.25s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  touch-action: manipulation;
+}
+
+.rest-btn:hover:not(:disabled) {
+  background: #ff9800;
+  color: #000;
+  box-shadow: 0 0 20px rgba(255, 152, 0, 0.4);
+  transform: translateY(-1px);
+}
+
+.rest-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.rest-btn:disabled:not(.rest-btn--done) {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Done / rested state */
+.rest-btn--done {
+  background: rgba(0, 208, 132, 0.1);
+  border-color: var(--success);
+  color: var(--success);
+  cursor: not-allowed;
+  opacity: 0.85;
+}

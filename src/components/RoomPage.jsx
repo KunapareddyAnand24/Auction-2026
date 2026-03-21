@@ -1,7 +1,7 @@
 import React, { Component } from 'react';
 import { ref, set, get, runTransaction } from 'firebase/database';
 import { db } from '../firebase';
-import playersData from '../data/playersData';
+import playersData, { PLAYER_SETS } from '../data/playersData';
 
 class RoomPage extends Component {
     state = {
@@ -38,25 +38,31 @@ class RoomPage extends Component {
         this.setState({ maxTeams });
     };
 
-    getPoolSize = (teamCount) => {
-        if (teamCount <= 2) return 50;
-        if (teamCount === 3) return 75;
-        if (teamCount === 4) return 100;
-        return 110; // 5+ teams = all players
+    // How many uncapped (tier-2) players to randomly add per set
+    getUncappedPerSet = (teamCount) => {
+        // More teams → more uncapped needed to pad out squads
+        return Math.min(13, Math.max(8, teamCount * 3));
+    };
+
+    // Pool = ALL tier-1 + random subset of tier-2, set by set
+    buildSetOrderedPool = (uncappedPerSet) => {
+        const setNums = [1, 2, 3, 4];
+        let pool = [];
+        setNums.forEach(s => {
+            const t1 = playersData.filter(p => p.set === s && p.tier === 1);
+            const t2 = this.shuffleArray(playersData.filter(p => p.set === s && p.tier === 2));
+            const picked = t2.slice(0, Math.min(uncappedPerSet, t2.length));
+            const setPlayers = this.shuffleArray(t1).concat(picked); // shuffle T1 within set, T2 random already
+            pool = pool.concat(setPlayers);
+        });
+        return pool;
     };
 
     handleCreateRoom = async () => {
         const { roomCode, hostTeamName, maxTeams } = this.state;
 
-        if (!roomCode) {
-            alert("Please generate a room code first.");
-            return;
-        }
-
-        if (!hostTeamName.trim()) {
-            alert("Please enter your team name.");
-            return;
-        }
+        if (!roomCode) { alert("Please generate a room code first."); return; }
+        if (!hostTeamName.trim()) { alert("Please enter your team name."); return; }
 
         const teams = [
             { id: 1, name: hostTeamName.trim(), purse: 100, players: [] }
@@ -68,19 +74,22 @@ class RoomPage extends Component {
         }
 
         try {
-            const poolSize = this.getPoolSize(maxTeams);
-            const randomizedPool = this.shuffleArray(playersData).slice(0, poolSize);
+            const uncappedPerSet = this.getUncappedPerSet(maxTeams);
+            const orderedPool = this.buildSetOrderedPool(uncappedPerSet);
 
             const roomRef = ref(db, `rooms/${this.state.roomCode}`);
             await set(roomRef, {
-                teams: teams,
+                teams,
                 maxAllowedTeams: maxTeams,
                 currentPlayerIndex: 0,
                 currentBid: 0,
                 highestBidderId: null,
                 status: 'waiting',
-                maxPlayers: poolSize,
-                playersPool: randomizedPool,
+                maxPlayers: orderedPool.length,
+                playersPool: orderedPool,
+                currentSet: 1,
+                currentSetName: PLAYER_SETS[1],
+                auctionRound: 'main',
                 createdAt: new Date().toISOString()
             });
 
@@ -88,7 +97,7 @@ class RoomPage extends Component {
             this.props.setIsHost(true);
             this.props.setRoomCode(roomCode);
             this.props.setTeams(teams);
-            this.props.setView('rules'); // Transition to rules page instead of directly to auction
+            this.props.setView('rules');
         } catch (error) {
             console.error("Error creating room:", error);
             alert(`Failed to create room: ${error.message}`);
@@ -103,31 +112,27 @@ class RoomPage extends Component {
         }
 
         try {
-            if (!db) {
-                alert("Firebase is not configured. Please check firebase.js");
-                return;
-            }
+            if (!db) { alert("Firebase is not configured. Please check firebase.js"); return; }
             const roomRef = ref(db, `rooms/${joinCode}`);
-            
-            // Using transaction to safely append to teams array
+
             let joinedTeamId = null;
             let finalTeams = [];
             const result = await runTransaction(roomRef, (currentData) => {
                 if (currentData) {
                     if (!currentData.teams) currentData.teams = [];
                     const maxAllowed = currentData.maxAllowedTeams || 8;
-                    
-                    const existingTeam = currentData.teams.find(t => t.name.toLowerCase() === joinTeamName.trim().toLowerCase());
+
+                    const existingTeam = currentData.teams.find(
+                        t => t.name.toLowerCase() === joinTeamName.trim().toLowerCase()
+                    );
                     if (existingTeam) {
                         joinedTeamId = existingTeam.id;
                         finalTeams = currentData.teams;
-                        return currentData; // No change
+                        return currentData;
                     }
-                    
-                    if (currentData.teams.length >= maxAllowed) {
-                        return; // Abort transaction
-                    }
-                    
+
+                    if (currentData.teams.length >= maxAllowed) return;
+
                     joinedTeamId = currentData.teams.length + 1;
                     const newTeam = { id: joinedTeamId, name: joinTeamName.trim(), purse: 100, players: [] };
                     currentData.teams.push(newTeam);
@@ -145,7 +150,7 @@ class RoomPage extends Component {
             this.props.setTeams(finalTeams);
             this.props.setMyTeamId(joinedTeamId);
             this.props.setIsHost(false);
-            this.props.setView('rules'); // Transition to rules before auction
+            this.props.setView('rules');
         } catch (error) {
             console.error("Error joining room:", error);
             alert("Failed to join room. Check your connection.");
@@ -154,7 +159,11 @@ class RoomPage extends Component {
 
     render() {
         const { isCreating, maxTeams, hostTeamName, joinCode, joinTeamName } = this.state;
-        const poolSize = this.getPoolSize(maxTeams);
+        // Compute actual preview pool size
+        const t1Count = [1,2,3,4].reduce((acc, s) => acc + playersData.filter(p => p.set === s && p.tier === 1).length, 0);
+        const uncappedPerSet = this.getUncappedPerSet(maxTeams);
+        const t2Count = [1,2,3,4].reduce((acc, s) => acc + Math.min(uncappedPerSet, playersData.filter(p => p.set === s && p.tier === 2).length), 0);
+        const poolSize = t1Count + t2Count;
 
         return (
             <div className="container animate-fade-in">
@@ -169,15 +178,11 @@ class RoomPage extends Component {
                         <button
                             className={`btn flex-1 ${isCreating ? 'btn-primary' : 'btn-outline'}`}
                             onClick={() => this.setState({ isCreating: true })}
-                        >
-                            Create Room
-                        </button>
+                        >Create Room</button>
                         <button
                             className={`btn flex-1 ${!isCreating ? 'btn-primary' : 'btn-outline'}`}
                             onClick={() => this.setState({ isCreating: false })}
-                        >
-                            Join Room
-                        </button>
+                        >Join Room</button>
                     </div>
 
                     {isCreating ? (
@@ -208,11 +213,10 @@ class RoomPage extends Component {
                                 </div>
                             </div>
 
-                            {/* Pool Size Indicator */}
-                            <div className="text-center mb-6">
+                            <div className="text-center mb-4">
                                 <div className="pool-indicator">
                                     <span className="pool-indicator-dot"></span>
-                                    {poolSize} Players in Auction Pool
+                                    {poolSize} Players · {t1Count} Recognized + {t2Count} Uncapped · 4 Sets
                                 </div>
                             </div>
 

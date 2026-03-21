@@ -1,6 +1,90 @@
 import React, { Component } from 'react';
-import { ref, update, onValue, runTransaction } from 'firebase/database';
 import { db } from '../firebase';
+import { ref, update, onValue, runTransaction, push } from 'firebase/database';
+import { PLAYER_SETS } from '../data/playersData';
+import VoiceChat from './VoiceChat';
+
+class ChatBox extends Component {
+    state = { message: '', messages: [] };
+    messagesEndRef = React.createRef();
+    chatListener = null;
+
+    componentDidMount() {
+        if (!db || !this.props.roomCode) return;
+        const chatRef = ref(db, `rooms/${this.props.roomCode}/chat`);
+        this.chatListener = onValue(chatRef, (snap) => {
+            const data = snap.val();
+            const msgs = data ? Object.values(data).sort((a, b) => a.ts - b.ts) : [];
+            this.setState({ messages: msgs }, this.scrollToBottom);
+        });
+    }
+
+    componentWillUnmount() {
+        if (this.chatListener) this.chatListener();
+    }
+
+    scrollToBottom = () => {
+        if (this.messagesEndRef.current) {
+            this.messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+    };
+
+    sendMessage = async () => {
+        const { message } = this.state;
+        if (!message.trim() || !db) return;
+        const chatRef = ref(db, `rooms/${this.props.roomCode}/chat`);
+        await push(chatRef, {
+            sender: this.props.senderName || 'Team',
+            text: message.trim(),
+            ts: Date.now(),
+            time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        });
+        this.setState({ message: '' });
+    };
+
+    handleKeyDown = (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.sendMessage(); }
+    };
+
+    render() {
+        const { messages, message } = this.state;
+        return (
+            <div className="chat-panel">
+                <div className="chat-header">
+                    <span>💬 LIVE CHAT</span>
+                    <span className="chat-online-dot"></span>
+                </div>
+                <div className="chat-messages">
+                    {messages.length === 0 && (
+                        <div className="chat-empty">Chat is live — say something!</div>
+                    )}
+                    {messages.map((m, i) => {
+                        const isMe = m.sender === (this.props.senderName || 'Team');
+                        return (
+                            <div key={i} className={`chat-bubble ${isMe ? 'chat-bubble--me' : 'chat-bubble--other'}`}>
+                                {!isMe && <div className="chat-sender">{m.sender}</div>}
+                                <div className="chat-text">{m.text}</div>
+                                <div className="chat-time">{m.time}</div>
+                            </div>
+                        );
+                    })}
+                    <div ref={this.messagesEndRef} />
+                </div>
+                <div className="chat-input-row">
+                    <input
+                        className="chat-input"
+                        placeholder="Type a message..."
+                        value={message}
+                        onChange={(e) => this.setState({ message: e.target.value })}
+                        onKeyDown={this.handleKeyDown}
+                        maxLength={200}
+                    />
+                    <button className="chat-send-btn" onClick={this.sendMessage} disabled={!message.trim()}>▶</button>
+                </div>
+            </div>
+        );
+    }
+}
 
 class AuctionDashboard extends Component {
     constructor(props) {
@@ -12,8 +96,11 @@ class AuctionDashboard extends Component {
             serverTimeOffset: 0,
             soldCelebration: null,
             unsoldCelebration: null,
+            setCelebration: null,
             isProcessingSold: false,
             currentPlayerImage: null,
+            showUnsoldConfirm: false,
+            chatOpen: true,
         };
         this.timerInterval = null;
         this.roomRef = db && this.props.roomCode ? ref(db, `rooms/${this.props.roomCode}`) : null;
@@ -28,20 +115,18 @@ class AuctionDashboard extends Component {
     }
 
     listenToServerOffset = () => {
-        const offsetRef = ref(db, ".info/serverTimeOffset");
-        onValue(offsetRef, (snap) => {
-            this.setState({ serverTimeOffset: snap.val() || 0 });
-        });
+        const offsetRef = ref(db, '.info/serverTimeOffset');
+        onValue(offsetRef, (snap) => this.setState({ serverTimeOffset: snap.val() || 0 }));
     };
 
     componentDidUpdate(prevProps, prevState) {
-        // Auto-trigger sold when timer reaches 0
         if (
-            this.props.isHost && // Only host handles the auto-transition to avoid race conditions
+            this.props.isHost &&
             prevState.localTimer > 0 &&
             this.state.localTimer === 0 &&
             this.state.roomData &&
             this.state.roomData.status === 'active' &&
+            !this.state.roomData.paused &&
             !this.state.isProcessingSold
         ) {
             this.setState({ isProcessingSold: true }, () => {
@@ -67,7 +152,6 @@ class AuctionDashboard extends Component {
                     this.fetchPlayerImage(this.props.players[data.currentPlayerIndex].name);
                 }
 
-                // Convert history object to array
                 const history = data.bidHistory ? Object.values(data.bidHistory).reverse() : [];
                 this.setState({ bidHistory: history });
             }
@@ -77,15 +161,17 @@ class AuctionDashboard extends Component {
     fetchPlayerImage = async (playerName) => {
         this.setState({ currentPlayerImage: null });
         try {
-            const response = await fetch(`https://en.wikipedia.org/w/api.php?action=query&prop=pageimages&format=json&piprop=original&titles=${encodeURIComponent(playerName)}&origin=*`);
-            const data = await response.json();
+            const res = await fetch(
+                `https://en.wikipedia.org/w/api.php?action=query&prop=pageimages&format=json&piprop=original&titles=${encodeURIComponent(playerName)}&origin=*`
+            );
+            const data = await res.json();
             const pages = data.query.pages;
             const pageId = Object.keys(pages)[0];
             if (pageId !== '-1' && pages[pageId].original) {
                 this.setState({ currentPlayerImage: pages[pageId].original.source });
             }
-        } catch (error) {
-            console.error("Failed to fetch player image:", error);
+        } catch (e) {
+            console.error('Failed to fetch player image:', e);
         }
     };
 
@@ -104,191 +190,235 @@ class AuctionDashboard extends Component {
 
     handleWait = async () => {
         if (!this.roomRef || this.state.roomData?.paused) return;
-        await update(this.roomRef, { paused: true });
+        await update(this.roomRef, { paused: true, resumeRequested: false });
+    };
+
+    handleRequestResume = async () => {
+        if (!this.roomRef) return;
+        await update(this.roomRef, { resumeRequested: true });
     };
 
     handleResume = async () => {
         if (!this.roomRef || !this.state.roomData?.paused) return;
-        
-        // Add remaining time back to now to get new end time
         const { serverTimeOffset, localTimer } = this.state;
         const now = Date.now() + serverTimeOffset;
         const newEndTime = now + (localTimer * 1000);
-
-        await update(this.roomRef, { 
+        await update(this.roomRef, {
             paused: false,
+            resumeRequested: false,
             endTime: newEndTime
         });
     };
 
-    // Check if a team can no longer bid (full squad or insufficient purse)
+    handleUnsoldClick = () => {
+        if (!this.props.isHost) return;
+        this.setState({ showUnsoldConfirm: true });
+    };
+
+    handleConfirmUnsold = async () => {
+        this.setState({ showUnsoldConfirm: false });
+        if (!this.roomRef) return;
+        // Immediately stop timer and fire unsold logic
+        await update(this.roomRef, { status: 'waiting', paused: false });
+        this.setState({ isProcessingSold: true }, () => this.handleSold());
+    };
+
     isTeamInactive = (team, minBidPrice) => {
-        const playerCount = team.players ? team.players.length : 0;
-        if (playerCount >= 18) return true;
+        const { roomData } = this.state;
+        // Rested teams are treated as fully inactive
+        const restedTeams = roomData?.restedTeams || [];
+        if (restedTeams.includes(team.id)) return true;
+        if ((team.players ? team.players.length : 0) >= 18) return true;
         if (team.purse < minBidPrice) return true;
         return false;
     };
 
+    isTeamRested = (teamId) => {
+        const restedTeams = this.state.roomData?.restedTeams || [];
+        return restedTeams.includes(teamId);
+    };
+
+    handleRest = async (team) => {
+        if (!this.roomRef) return;
+        const { roomData } = this.state;
+        const playerCount = (team.players || []).length;
+        if (playerCount < 11) {
+            alert(`You need at least 11 players to REST. You currently have ${playerCount}.`);
+            return;
+        }
+        const restedTeams = roomData.restedTeams || [];
+        if (restedTeams.includes(team.id)) return;
+        const updatedRested = [...restedTeams, team.id];
+        await update(this.roomRef, { restedTeams: updatedRested });
+        // Check if all teams can stop — if so, finish immediately
+        await this.checkAllTeamsDone(updatedRested);
+    };
+
+    checkAllTeamsDone = async (restedTeams) => {
+        const { roomData } = this.state;
+        if (!roomData) return;
+        const minBid = 0.5;
+        const allDone = roomData.teams.every(t => {
+            if ((restedTeams || []).includes(t.id)) return true;
+            if ((t.players || []).length >= 18) return true;
+            if (t.purse < minBid) return true;
+            return false;
+        });
+        if (allDone) {
+            await this.finishAuction();
+        }
+    };
+
     handleBid = async (team) => {
         const { roomData, localTimer } = this.state;
-        if (!roomData || localTimer <= 0) return;
+        if (!roomData || localTimer <= 0 || roomData.paused) return;
 
-        const increment = 1;
-        const currentBid = roomData.currentBid || this.props.players[roomData.currentPlayerIndex].basePrice;
-        const newBid = roomData.highestBidderId ? currentBid + increment : currentBid;
+        const player = this.props.players[roomData.currentPlayerIndex];
+        const effectiveBase = roomData.reAuctionBasePrice || player.basePrice;
+        const currentBid = roomData.currentBid || effectiveBase;
+        const newBid = roomData.highestBidderId ? currentBid + 0.25 : currentBid;
 
         if (team.purse < newBid) {
             alert(`${team.name} doesn't have enough purse!`);
             return;
         }
 
-        // Use transaction to ensure atomic bid updates
         try {
-            if (!db || !this.roomRef) {
-                alert("Firebase is not configured properly.");
-                return;
-            }
+            if (!db || !this.roomRef) { alert('Firebase is not configured properly.'); return; }
             await runTransaction(this.roomRef, (currentData) => {
                 if (currentData) {
                     const bidTime = Date.now();
                     let newEndTime = currentData.endTime;
-
-                    // Extend timer if in last 5 seconds
                     const rem = Math.max(0, Math.floor((newEndTime - bidTime) / 1000));
-                    if (rem <= 5) {
-                        newEndTime = bidTime + (rem + 5) * 1000;
-                    }
+                    if (rem <= 5) newEndTime = bidTime + (rem + 5) * 1000;
 
-                    currentData.currentBid = newBid;
+                    currentData.currentBid = Math.round(newBid * 100) / 100;
                     currentData.highestBidderId = team.id;
                     currentData.highestBidderName = team.name;
                     currentData.endTime = newEndTime;
 
-                    // Update history
                     if (!currentData.bidHistory) currentData.bidHistory = {};
-                    const historyKey = `bid_${bidTime}`;
-                    currentData.bidHistory[historyKey] = {
+                    currentData.bidHistory[`bid_${bidTime}`] = {
                         teamName: team.name,
-                        amount: newBid,
+                        amount: Math.round(newBid * 100) / 100,
                         time: new Date().toLocaleTimeString()
                     };
                 }
                 return currentData;
             });
         } catch (error) {
-            console.error("Bid transaction failed:", error);
+            console.error('Bid transaction failed:', error);
         }
     };
 
-    // Helper to finish auction and transition to transfer phase
     finishAuction = async () => {
         const { roomData } = this.state;
         const teamsWithValidation = roomData.teams.map(t => ({
             ...t,
             qualified: (t.players ? t.players.length : 0) >= 11
         }));
-        await update(this.roomRef, { 
-            status: 'transfer',
-            teams: teamsWithValidation
-        });
+        await update(this.roomRef, { status: 'transfer', teams: teamsWithValidation });
     };
 
-    // Logic to start the auction for a player (only callable by host or via trigger)
+    // Determine which set a player at the given index belongs to
+    getPlayerSet = (playerIndex) => {
+        const p = this.props.players[playerIndex];
+        return p ? (p.set || 1) : 1;
+    };
+
     startAuctionForPlayer = async (index) => {
         let playerIndex = index;
 
-        // Random selection logic if index is -1 (trigger for random)
         if (index === -1) {
             const { roomData } = this.state;
             const unsoldPlayers = roomData.unsoldPlayers || [];
             const isReAuction = roomData.auctionRound === 're-auction';
 
-            // Check if all teams are inactive (full squad or broke)
             const minBasePrice = isReAuction
-                ? Math.min(...unsoldPlayers.map(p => Math.max(0.5, Math.floor(p.basePrice * 0.5 * 10) / 10)))
+                ? Math.min(...unsoldPlayers.map(p => Math.max(0.5, p.basePrice * 0.5)))
                 : Math.min(...this.props.players.map(p => p.basePrice));
-            const allTeamsInactive = roomData.teams.every(t => this.isTeamInactive(t, minBasePrice || 0.5));
-            if (allTeamsInactive) {
-                await this.finishAuction();
-                return;
-            }
+            // Include rested teams in inactive check
+            const restedTeams = roomData.restedTeams || [];
+            const allTeamsInactive = roomData.teams.every(t =>
+                restedTeams.includes(t.id) || this.isTeamInactive(t, minBasePrice || 0.5)
+            );
+            if (allTeamsInactive) { await this.finishAuction(); return; }
 
             if (isReAuction) {
-                // RE-AUCTION MODE: pick from unsoldPlayers
                 if (unsoldPlayers.length === 0) {
-                    // Re-auction finished
                     await update(this.roomRef, { reAuctionDone: true });
                     await this.finishAuction();
                     return;
                 }
-
-                // Pick a random unsold player
                 const pickIdx = Math.floor(Math.random() * unsoldPlayers.length);
                 const unsoldPlayer = unsoldPlayers[pickIdx];
-                const reAuctionBasePrice = Math.max(0.5, Math.floor(unsoldPlayer.basePrice * 0.5 * 10) / 10);
-
-                // Find the original player index in the main players array
+                const reAuctionBasePrice = Math.max(0.5, Math.round(unsoldPlayer.basePrice * 0.5 * 100) / 100);
                 const originalIndex = this.props.players.findIndex(p => p.name === unsoldPlayer.name);
-
-                // Remove picked player from unsoldPlayers
                 const updatedUnsold = unsoldPlayers.filter((_, i) => i !== pickIdx);
-
-                const { serverTimeOffset } = this.state;
-                const now = Date.now() + serverTimeOffset;
-                const endTime = now + 20000;
-
+                const now = Date.now() + this.state.serverTimeOffset;
                 this.setState({ isProcessingSold: false });
-
-                try {
-                    await update(this.roomRef, {
-                        currentPlayerIndex: originalIndex,
-                        currentBid: reAuctionBasePrice,
-                        reAuctionBasePrice: reAuctionBasePrice,
-                        highestBidderId: null,
-                        highestBidderName: null,
-                        endTime: endTime,
-                        status: 'active',
-                        bidHistory: null,
-                        unsoldPlayers: updatedUnsold.length > 0 ? updatedUnsold : null,
-                    });
-                    console.log("Re-auction started for player", unsoldPlayer.name, "at base", reAuctionBasePrice);
-                } catch (error) {
-                    console.error("Failed to start re-auction:", error);
-                }
+                await update(this.roomRef, {
+                    currentPlayerIndex: originalIndex,
+                    currentBid: reAuctionBasePrice,
+                    reAuctionBasePrice,
+                    highestBidderId: null,
+                    highestBidderName: null,
+                    endTime: now + 20000,
+                    status: 'active',
+                    bidHistory: null,
+                    paused: false,
+                    resumeRequested: false,
+                    unsoldPlayers: updatedUnsold.length > 0 ? updatedUnsold : null,
+                });
                 return;
             }
 
-            // MAIN AUCTION MODE
-            const availableIndices = this.props.players
-                .map((p, i) => ({ ...p, originalIndex: i }))
-                .filter(p => {
-                    const isSold = roomData.teams.some(team =>
-                        team.players && team.players.some(tp => tp.name === p.name)
-                    );
-                    const isUnsold = unsoldPlayers.some(up => up.name === p.name);
-                    return !isSold && !isUnsold;
-                })
-                .map(p => p.originalIndex);
+            // MAIN AUCTION: find next player in current set, else advance set
+            const currentSet = roomData.currentSet || 1;
 
-            if (availableIndices.length === 0) {
-                // Main auction exhausted — check for unsold players to start re-auction
-                if (unsoldPlayers.length > 0 && !roomData.reAuctionDone) {
-                    await update(this.roomRef, { auctionRound: 're-auction' });
-                    // Recursively call to pick from unsold
-                    this.startAuctionForPlayer(-1);
+            // Try to find available player in current set
+            const soldNames = new Set(
+                roomData.teams.flatMap(t => (t.players || []).map(p => p.name))
+            );
+            const unsoldNames = new Set(unsoldPlayers.map(p => p.name));
+
+            const availableInSet = this.props.players
+                .map((p, i) => ({ ...p, originalIndex: i }))
+                .filter(p => p.set === currentSet && !soldNames.has(p.name) && !unsoldNames.has(p.name));
+
+            if (availableInSet.length === 0) {
+                // Current set exhausted — move to next set
+                const nextSet = currentSet + 1;
+                if (nextSet > 4 || !Object.keys(PLAYER_SETS).map(Number).includes(nextSet)) {
+                    // All sets done — check for unsold players
+                    if (unsoldPlayers.length > 0 && !roomData.reAuctionDone) {
+                        await update(this.roomRef, { auctionRound: 're-auction' });
+                        this.startAuctionForPlayer(-1);
+                        return;
+                    }
+                    await this.finishAuction();
                     return;
                 }
-                await this.finishAuction();
+
+                // Show set completion banner, then advance
+                this.setState({ setCelebration: PLAYER_SETS[currentSet], isProcessingSold: false });
+                await update(this.roomRef, {
+                    currentSet: nextSet,
+                    currentSetName: PLAYER_SETS[nextSet],
+                });
+                setTimeout(() => {
+                    this.setState({ setCelebration: null });
+                    this.startAuctionForPlayer(-1);
+                }, 2500);
                 return;
             }
-            playerIndex = availableIndices[Math.floor(Math.random() * availableIndices.length)];
+
+            // Pick a random player from the available in current set
+            playerIndex = availableInSet[Math.floor(Math.random() * availableInSet.length)].originalIndex;
         }
 
         const player = this.props.players[playerIndex];
-        const { serverTimeOffset } = this.state;
-        const now = Date.now() + serverTimeOffset;
-        const endTime = now + 20000;
-
+        const now = Date.now() + this.state.serverTimeOffset;
         this.setState({ isProcessingSold: false });
 
         try {
@@ -298,14 +428,15 @@ class AuctionDashboard extends Component {
                 reAuctionBasePrice: null,
                 highestBidderId: null,
                 highestBidderName: null,
-                endTime: endTime,
+                endTime: now + 20000,
                 status: 'active',
-                bidHistory: null
+                bidHistory: null,
+                paused: false,
+                resumeRequested: false,
             });
-            console.log("Auction started for player", playerIndex);
         } catch (error) {
-            console.error("Failed to start auction:", error);
-            alert("Error: " + error.message);
+            console.error('Failed to start auction:', error);
+            alert('Error: ' + error.message);
         }
     };
 
@@ -321,7 +452,7 @@ class AuctionDashboard extends Component {
                 if (t.id === bidderId) {
                     return {
                         ...t,
-                        purse: t.purse - roomData.currentBid,
+                        purse: Math.round((t.purse - roomData.currentBid) * 100) / 100,
                         players: [...(t.players || []), { ...player, soldPrice: roomData.currentBid }]
                     };
                 }
@@ -339,22 +470,16 @@ class AuctionDashboard extends Component {
                 }
             });
 
-            await update(this.roomRef, {
-                teams: updatedTeams,
-                status: 'waiting'
-            });
+            await update(this.roomRef, { teams: updatedTeams, status: 'waiting' });
 
-            // Auto-dismiss and start next
             setTimeout(() => {
                 this.setState({ soldCelebration: null });
                 this.startAuctionForPlayer(-1);
             }, 3000);
         } else {
-            // UNSOLD — no bids were placed
             const unsoldPlayers = roomData.unsoldPlayers || [];
             const isReAuction = roomData.auctionRound === 're-auction';
 
-            // Show unsold celebration
             this.setState({
                 unsoldCelebration: {
                     playerName: player.name,
@@ -364,20 +489,15 @@ class AuctionDashboard extends Component {
             });
 
             if (!isReAuction) {
-                // Add to unsold list during main auction
-                const updatedUnsold = [...unsoldPlayers, { name: player.name, basePrice: player.basePrice, role: player.role, rating: player.rating }];
-                await update(this.roomRef, {
-                    status: 'waiting',
-                    unsoldPlayers: updatedUnsold,
-                });
+                const updatedUnsold = [
+                    ...unsoldPlayers,
+                    { name: player.name, basePrice: player.basePrice, role: player.role, rating: player.rating }
+                ];
+                await update(this.roomRef, { status: 'waiting', unsoldPlayers: updatedUnsold });
             } else {
-                // During re-auction, permanently unsold — just move on
-                await update(this.roomRef, {
-                    status: 'waiting'
-                });
+                await update(this.roomRef, { status: 'waiting' });
             }
 
-            // Auto-dismiss and start next
             setTimeout(() => {
                 this.setState({ unsoldCelebration: null });
                 this.startAuctionForPlayer(-1);
@@ -386,16 +506,27 @@ class AuctionDashboard extends Component {
     };
 
     render() {
-        const { roomData, localTimer, bidHistory, soldCelebration, unsoldCelebration } = this.state;
+        const { roomData, localTimer, bidHistory, soldCelebration, unsoldCelebration, setCelebration, chatOpen } = this.state;
         if (!roomData) return <div className="container text-center text-secondary">Loading Room Data...</div>;
 
         const players = this.props.players;
         const player = players[roomData.currentPlayerIndex];
+        if (!player) return <div className="container text-center text-secondary">Loading player...</div>;
+
         const displayImage = this.state.currentPlayerImage || player.image;
         const teams = roomData.teams || [];
         const unsoldPlayers = roomData.unsoldPlayers || [];
         const isReAuction = roomData.auctionRound === 're-auction';
         const effectiveBasePrice = roomData.reAuctionBasePrice || player.basePrice;
+        const isPaused = !!roomData.paused;
+        const resumeRequested = !!roomData.resumeRequested;
+        const currentSetName = roomData.currentSetName || PLAYER_SETS[roomData.currentSet || 1] || 'SET 1 — BATSMEN';
+
+        // Auction status label
+        let statusLabel = '🔴 LIVE';
+        let statusClass = 'status-badge-live';
+        if (isPaused) { statusLabel = '⏸ PAUSED'; statusClass = 'status-badge-paused'; }
+        if (roomData.status === 'waiting') { statusLabel = '⏳ WAITING'; statusClass = 'status-badge-waiting'; }
 
         if (roomData.status === 'finished') {
             return (
@@ -407,15 +538,36 @@ class AuctionDashboard extends Component {
         }
 
         return (
-            <div className="auction-grid animate-fade-in">
-                {/* Re-Auction Round Banner */}
+            <div className="auction-layout-wrapper">
+                {/* ── Set Banner ── */}
+                {!isReAuction && (
+                    <div className="set-banner">
+                        <span className="set-banner-icon">🏏</span>
+                        {currentSetName}
+                        <span className={`status-badge ${statusClass}`}>{statusLabel}</span>
+                    </div>
+                )}
                 {isReAuction && (
                     <div className="reauction-banner">
                         <span className="reauction-banner-icon">🔄</span>
                         RE-AUCTION ROUND — Unsold Players
+                        <span className={`status-badge ${statusClass}`}>{statusLabel}</span>
                     </div>
                 )}
-                {/* Sold Celebration Overlay */}
+
+                {/* ── Set Complete Banner ── */}
+                {setCelebration && (
+                    <div className="set-complete-overlay">
+                        <div className="set-complete-card">
+                            <div className="text-6xl mb-4">✅</div>
+                            <div className="text-3xl font-black text-accent mb-2">{setCelebration}</div>
+                            <div className="text-secondary text-lg">SET COMPLETE!</div>
+                            <div className="text-sm text-secondary mt-2 animate-pulse">Moving to next set...</div>
+                        </div>
+                    </div>
+                )}
+
+                {/* ── Sold Overlay ── */}
                 {soldCelebration && (
                     <div className="sold-overlay" onClick={() => this.setState({ soldCelebration: null })}>
                         <div className="sold-card">
@@ -433,13 +585,14 @@ class AuctionDashboard extends Component {
                                 <span className="sold-detail-chip">⭐ {soldCelebration.rating}</span>
                             </div>
                             <button className="btn btn-outline px-8 py-2"
-                                onClick={(e) => { e.stopPropagation(); this.setState({ soldCelebration: null }); }}
-                            >Continue</button>
+                                onClick={(e) => { e.stopPropagation(); this.setState({ soldCelebration: null }); }}>
+                                Continue
+                            </button>
                         </div>
                     </div>
                 )}
 
-                {/* Unsold Overlay */}
+                {/* ── Unsold Overlay ── */}
                 {unsoldCelebration && (
                     <div className="unsold-overlay" onClick={() => this.setState({ unsoldCelebration: null })}>
                         <div className="unsold-card">
@@ -456,39 +609,29 @@ class AuctionDashboard extends Component {
                     </div>
                 )}
 
-                {/* Left: Player Card */}
-                <div className="glass p-6 flex flex-col gap-4 mobile-order-2">
-                    <div className="player-image-container">
-                        <img src={displayImage} alt={player.name} />
-                        <div className="player-rating-badge">
-                            {player.rating}
-                        </div>
-                    </div>
-                    <h2 className="text-2xl text-accent font-bold mt-2">{player.name}</h2>
-                    <div className="text-secondary text-sm font-semibold uppercase tracking-wide">
-                        Role: <span className="text-primary">{player.role}</span>
-                    </div>
-                    <div className="text-secondary text-sm font-semibold uppercase tracking-wide">
-                        Base Price: <span className="text-primary">{effectiveBasePrice} Cr</span>
-                        {isReAuction && <span className="text-xs text-warning ml-2">(Reduced)</span>}
-                    </div>
-
-                    {player.stats && (
-                        <div className="stat-box mt-2">
-                            <div className="text-xs text-accent font-bold mb-3 tracking-widest">CAREER STATS</div>
-                            <div className="grid grid-cols-2 gap-3 text-sm">
-                                <div>MTS: <span className="font-bold text-white">{player.stats.matches}</span></div>
-                                {player.role !== 'Bowler' && <div>RUNS: <span className="font-bold text-white">{player.stats.runs}</span></div>}
-                                {player.role !== 'Bowler' && <div>SR: <span className="font-bold text-white">{player.stats.strikeRate}</span></div>}
-                                {player.role !== 'Batsman' && player.role !== 'Wicketkeeper' && <div>WKTS: <span className="font-bold text-white">{player.stats.wickets}</span></div>}
-                                {player.role !== 'Batsman' && player.role !== 'Wicketkeeper' && <div>ECO: <span className="font-bold text-white">{player.stats.economy}</span></div>}
+                {/* ── Unsold Confirmation Modal ── */}
+                {this.state.showUnsoldConfirm && (
+                    <div className="modal-overlay">
+                        <div className="modal-card">
+                            <div className="text-3xl mb-3">⚠️</div>
+                            <div className="text-xl font-black text-danger mb-2">Mark as UNSOLD?</div>
+                            <div className="text-secondary text-sm mb-6">
+                                <strong>{player.name}</strong> will be immediately marked as unsold and removed from the current auction round.
+                            </div>
+                            <div className="flex gap-3 justify-center">
+                                <button className="btn btn-danger px-6 py-2 font-bold" onClick={this.handleConfirmUnsold}>
+                                    Yes, Mark Unsold
+                                </button>
+                                <button className="btn btn-outline px-6 py-2" onClick={() => this.setState({ showUnsoldConfirm: false })}>
+                                    Cancel
+                                </button>
                             </div>
                         </div>
-                    )}
-                </div>
+                    </div>
+                )}
 
-                {/* Admin Controls */}
-                {this.props.isHost && roomData.status === 'waiting' && !this.state.isProcessingSold && !this.state.soldCelebration && (
+                {/* ── Host: Ready Overlay ── */}
+                {this.props.isHost && roomData.status === 'waiting' && !this.state.isProcessingSold && !this.state.soldCelebration && !setCelebration && (
                     <div className="absolute inset-0 bg-dark bg-opacity-80 flex items-center justify-center z-50 animate-fade-in">
                         <div className="glass p-12 text-center max-w-sm">
                             <h2 className="text-3xl font-black text-accent mb-6 tracking-widest uppercase">Ready to Auction?</h2>
@@ -500,149 +643,270 @@ class AuctionDashboard extends Component {
                     </div>
                 )}
 
-                {/* Center: Bid Control */}
-                <div className="flex flex-col gap-6 mobile-order-1">
-                    {/* Top: Timer */}
-                    <div className={`glass text-center p-6 relative ${roomData.status === 'active' ? 'border-accent' : ''}`}>
-                        <div className="text-lg text-secondary font-bold tracking-widest uppercase mb-2">
-                            {roomData.status === 'active' ? 'TIME REMAINING' : 'AUCTION STATUS'}
+                {/* ── Main Auction Grid ── */}
+                <div className="auction-grid animate-fade-in">
+                    {/* LEFT: Player Card */}
+                    <div className="glass p-6 flex flex-col gap-4 mobile-order-2">
+                        <div className="player-image-container">
+                            <img src={displayImage} alt={player.name} />
+                            <div className="player-rating-badge">{player.rating}</div>
                         </div>
-                        <div className={`text-6xl font-black ${localTimer <= 5 && roomData.status === 'active' ? 'text-danger' : 'text-accent'} ${localTimer <= 5 && localTimer > 0 && roomData.status === 'active' ? 'animate-pulse' : ''}`}>
-                            {roomData.status === 'active' ? `${localTimer}s` : roomData.status.toUpperCase()}
+                        <h2 className="text-2xl text-accent font-bold mt-2">{player.name}</h2>
+                        <div className="text-secondary text-sm font-semibold uppercase tracking-wide">
+                            Role: <span className="text-primary">{player.role}</span>
                         </div>
-                        {roomData.paused && (
-                            <div className="absolute inset-0 bg-dark bg-opacity-90 flex flex-col items-center justify-center z-20 animate-fade-in rounded-lg">
-                                <div className="text-warning text-2xl font-black tracking-widest mb-4">AUCTION PAUSED</div>
-                                {this.props.isHost && (
-                                    <button className="btn btn-primary px-8 py-2 font-bold" onClick={this.handleResume}>
-                                        RESUME AUCTION
-                                    </button>
-                                )}
+                        <div className="text-secondary text-sm font-semibold uppercase tracking-wide">
+                            Base Price: <span className="text-primary">{effectiveBasePrice} Cr</span>
+                            {isReAuction && <span className="text-xs text-warning ml-2">(Reduced)</span>}
+                        </div>
+
+                        {player.stats && (
+                            <div className="stat-box mt-2">
+                                <div className="text-xs text-accent font-bold mb-3 tracking-widest">CAREER STATS</div>
+                                <div className="grid grid-cols-2 gap-3 text-sm">
+                                    <div>MTS: <span className="font-bold text-white">{player.stats.matches}</span></div>
+                                    {player.role !== 'Bowler' && <div>RUNS: <span className="font-bold text-white">{player.stats.runs}</span></div>}
+                                    {player.role !== 'Bowler' && <div>SR: <span className="font-bold text-white">{player.stats.strikeRate}</span></div>}
+                                    {(player.role === 'Bowler' || player.role === 'All-rounder') && <div>WKTS: <span className="font-bold text-white">{player.stats.wickets}</span></div>}
+                                    {(player.role === 'Bowler' || player.role === 'All-rounder') && <div>ECO: <span className="font-bold text-white">{player.stats.economy}</span></div>}
+                                </div>
                             </div>
                         )}
-                        {localTimer === 0 && roomData.status === 'active' && !roomData.paused && (
-                            <div className="absolute inset-0 bg-dark opacity-90 rounded-lg flex items-center justify-center z-10 animate-fade-in" style={{ opacity: 0.95 }}>
-                                <div className="text-2xl font-black text-accent tracking-wider animate-pulse">
-                                    {this.state.isProcessingSold ? 'PROCESSING...' : 'TIME UP!'}
-                                </div>
+
+                        {/* Unsold Players count */}
+                        {unsoldPlayers.length > 0 && (
+                            <div className="unsold-badge-panel">
+                                <span>⚡ {unsoldPlayers.length} player{unsoldPlayers.length > 1 ? 's' : ''} in re-auction queue</span>
                             </div>
                         )}
                     </div>
 
-                    {/* Current Bid */}
-                    <div className="glass text-center p-8 sm:p-10 flex-1 flex flex-col justify-center relative">
-                        <div className="absolute top-0 inset-x-0 h-1 bg-accent opacity-50"></div>
-                        <div className="text-xl text-secondary mb-4 font-bold tracking-widest">CURRENT BID</div>
-                        <div className="text-6xl font-black mb-2 flex items-center justify-center gap-2">
-                            {roomData.currentBid || effectiveBasePrice} <span className="text-3xl text-secondary">Cr</span>
-                        </div>
-                        {roomData.highestBidderName && (
-                            <div className="mt-4 text-success font-bold text-xl tracking-wide bg-success-light inline-block mx-auto px-6 py-2 rounded-full border border-success border-opacity-30">
-                                BID BY: {roomData.highestBidderName}
+                    {/* CENTER: Bid Controls */}
+                    <div className="flex flex-col gap-4 mobile-order-1">
+                        {/* Timer */}
+                        <div className={`glass text-center p-6 relative ${roomData.status === 'active' && !isPaused ? 'border-accent' : ''}`}>
+                            <div className="text-lg text-secondary font-bold tracking-widest uppercase mb-2">
+                                {roomData.status === 'active' ? 'TIME REMAINING' : 'AUCTION STATUS'}
                             </div>
-                        )}
+                            <div className={`text-6xl font-black ${localTimer <= 5 && roomData.status === 'active' && !isPaused ? 'text-danger' : 'text-accent'} ${localTimer <= 5 && localTimer > 0 && roomData.status === 'active' && !isPaused ? 'animate-pulse' : ''}`}>
+                                {roomData.status === 'active' && !isPaused ? `${localTimer}s` : roomData.status.toUpperCase()}
+                            </div>
 
-                        <div className="mt-8 flex-1 flex flex-col justify-center min-h-0">
-                            <div className="flex flex-col gap-4 items-center mb-4">
+                            {/* Paused Overlay */}
+                            {isPaused && (
+                                <div className="paused-overlay animate-fade-in">
+                                    <div className="text-warning text-2xl font-black tracking-widest mb-2">⏸ AUCTION PAUSED</div>
+                                    {resumeRequested && !this.props.isHost && (
+                                        <div className="text-success text-sm mb-3 animate-pulse">Resume requested — waiting for host...</div>
+                                    )}
+                                    {this.props.isHost ? (
+                                        <button
+                                            className={`btn btn-primary px-8 py-2 font-bold ${resumeRequested ? 'animate-pulse ring-2 ring-accent' : ''}`}
+                                            onClick={this.handleResume}
+                                        >
+                                            {resumeRequested ? '🔔 RESUME NOW' : 'RESUME AUCTION'}
+                                        </button>
+                                    ) : (
+                                        <button
+                                            className="btn btn-outline border-success text-success px-6 py-2 font-bold"
+                                            onClick={this.handleRequestResume}
+                                            disabled={resumeRequested}
+                                        >
+                                            {resumeRequested ? '✓ Resume Requested' : '🙋 Request Resume'}
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+
+                            {localTimer === 0 && roomData.status === 'active' && !isPaused && (
+                                <div className="absolute inset-0 bg-dark opacity-90 rounded-lg flex items-center justify-center z-10 animate-fade-in">
+                                    <div className="text-2xl font-black text-accent tracking-wider animate-pulse">
+                                        {this.state.isProcessingSold ? 'PROCESSING...' : 'TIME UP!'}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Current Bid */}
+                        <div className="glass text-center p-8 flex-1 flex flex-col justify-center relative">
+                            <div className="absolute top-0 inset-x-0 h-1 bg-accent opacity-50"></div>
+                            <div className="text-xl text-secondary mb-4 font-bold tracking-widest">CURRENT BID</div>
+                            <div className="text-6xl font-black mb-2 flex items-center justify-center gap-2">
+                                {roomData.currentBid || effectiveBasePrice} <span className="text-3xl text-secondary">Cr</span>
+                            </div>
+                            {roomData.highestBidderName && (
+                                <div className="mt-4 text-success font-bold text-xl tracking-wide bg-success-light inline-block mx-auto px-6 py-2 rounded-full border border-success border-opacity-30">
+                                    BID BY: {roomData.highestBidderName}
+                                </div>
+                            )}
+
+                            {/* Action Buttons */}
+                            <div className="mt-6 flex flex-col gap-3 items-center">
                                 {teams.map(team => {
                                     if (team.id !== this.props.myTeamId) return null;
-
                                     const currentBidPrice = roomData.currentBid || player.basePrice;
                                     const isInactive = this.isTeamInactive(team, currentBidPrice);
                                     const isSquadFull = team.players && team.players.length >= 18;
                                     const isHighestBidder = roomData.highestBidderId === team.id;
-                                    const isPaused = roomData.paused;
-                                    
-                                    const btnClass = "btn px-8 py-5 text-xl min-w-[300px]";
 
                                     return (
-                                        <div key={team.id} className="flex flex-col gap-3">
+                                        <div key={team.id} className="flex flex-col gap-3 w-full items-center">
+                                            {/* BID Button */}
                                             <button
-                                                className={`${btnClass} font-black transform hover:scale-105 transition-all shadow-xl ${isHighestBidder ? 'btn-outline border-2' : isInactive ? 'btn-outline opacity-50' : 'btn-primary'}`}
+                                                className={`btn px-8 py-5 text-xl min-w-[280px] font-black transform hover:scale-105 transition-all shadow-xl ${isHighestBidder ? 'btn-outline border-2 border-success' : isInactive ? 'btn-outline opacity-40' : 'btn-primary'}`}
                                                 onClick={() => this.handleBid(team)}
                                                 disabled={roomData.status !== 'active' || localTimer === 0 || isInactive || isHighestBidder || isPaused}
                                             >
-                                                {isSquadFull ? 'SQUAD FULL' : isInactive ? 'PURSE EXHAUSTED' : isHighestBidder ? `LATEST BID: ${team.name.toUpperCase()}` : `BID ${currentBidPrice} Cr`}
+                                                {isSquadFull ? 'SQUAD FULL' : isInactive ? 'PURSE EXHAUSTED' : isHighestBidder ? `✓ LEADING: ${team.name.toUpperCase()}` : `BID ${Math.round((currentBidPrice + (roomData.highestBidderId ? 0.25 : 0)) * 100) / 100} Cr`}
                                             </button>
-                                            
-                                            {roomData.status === 'active' && !isPaused && (
-                                                <button 
-                                                    className="btn btn-outline border-warning text-warning font-bold py-2 shadow-sm"
-                                                    onClick={this.handleWait}
+
+                                            {/* Wait / Resume row */}
+                                            <div className="flex gap-2 w-full justify-center">
+                                                {roomData.status === 'active' && !isPaused && (
+                                                    <button className="btn btn-outline border-warning text-warning font-bold py-2 px-6 flex-1 max-w-[160px]"
+                                                        onClick={this.handleWait}>
+                                                        ⏸ WAIT
+                                                    </button>
+                                                )}
+                                                {isPaused && !this.props.isHost && (
+                                                    <button
+                                                        className="btn btn-outline border-success text-success font-bold py-2 px-6 flex-1 max-w-[200px]"
+                                                        onClick={this.handleRequestResume}
+                                                        disabled={resumeRequested}
+                                                    >
+                                                        {resumeRequested ? '⏳ Requested' : '▶ Request Resume'}
+                                                    </button>
+                                                )}
+                                                {isPaused && this.props.isHost && (
+                                                    <button
+                                                        className={`btn btn-primary font-bold py-2 px-6 flex-1 max-w-[200px] ${resumeRequested ? 'animate-pulse' : ''}`}
+                                                        onClick={this.handleResume}
+                                                    >
+                                                        ▶ RESUME
+                                                    </button>
+                                                )}
+                                            </div>
+                                            {/* REST Button — available when team has ≥11 players */}
+                                            {(() => {
+                                                const playerCount = (team.players || []).length;
+                                                const hasRested = this.isTeamRested(team.id);
+                                                const canRest = playerCount >= 11;
+                                                return (
+                                                    <button
+                                                        className={`btn rest-btn py-2 px-6 font-bold w-full max-w-[280px] mt-1 ${hasRested ? 'rest-btn--done' : ''}`}
+                                                        onClick={() => this.handleRest(team)}
+                                                        disabled={hasRested || isInactive}
+                                                        title={canRest ? 'Click to stop bidding and proceed to Transfer' : `Need ${11 - playerCount} more player(s) to REST`}
+                                                    >
+                                                        {hasRested ? '✅ RESTED — Waiting for others' : canRest ? `🛑 REST (${playerCount}/18 players)` : `🔒 REST (need ${11 - playerCount} more)`}
+                                                    </button>
+                                                );
+                                            })()}
+                                            {this.props.isHost && roomData.status === 'active' && (
+                                                <button
+                                                    className="btn unsold-btn py-2 px-6 font-bold w-full max-w-[280px]"
+                                                    onClick={this.handleUnsoldClick}
                                                 >
-                                                    ⏸ WAIT
+                                                    ❌ MARK UNSOLD (Host)
                                                 </button>
                                             )}
                                         </div>
                                     );
                                 })}
+
+                                {/* Host UNSOLD button when no matching team (host is spectating) */}
+                                {this.props.isHost && roomData.status === 'active' && !teams.find(t => t.id === this.props.myTeamId) && (
+                                    <button className="btn unsold-btn py-2 px-6 font-bold" onClick={this.handleUnsoldClick}>
+                                        ❌ MARK UNSOLD (Host)
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Bid History */}
+                        <div className="glass h-full max-h-[160px] p-4 flex flex-col scrollable-panel">
+                            <h4 className="mb-3 text-sm tracking-widest text-accent font-bold uppercase border-b border-white border-opacity-10 pb-2">LIVE BID HISTORY</h4>
+                            <div className="flex-1 overflow-y-auto pr-2">
+                                {bidHistory.length === 0 ? (
+                                    <div className="text-secondary text-center mt-4 italic text-sm">Awaiting first bid...</div>
+                                ) : (
+                                    bidHistory.map((bid, i) => (
+                                        <div key={i} className="flex justify-between py-2 text-sm border-b border-white border-opacity-5 last:border-0 hover:bg-white hover:bg-opacity-5 px-2 rounded transition-colors">
+                                            <span><span className="text-accent font-bold">{bid.teamName}</span> bid <span className="font-bold">{bid.amount} Cr</span></span>
+                                            <span className="text-secondary text-xs">{bid.time}</span>
+                                        </div>
+                                    ))
+                                )}
                             </div>
                         </div>
                     </div>
 
-                    {/* Bottom: Bid History */}
-                    <div className="glass h-full max-h-[180px] p-4 flex flex-col scrollable-panel">
-                        <h4 className="mb-3 text-sm tracking-widest text-accent font-bold uppercase border-b border-white border-opacity-10 pb-2">LIVE BID HISTORY</h4>
-                        <div className="flex-1 overflow-y-auto pr-2">
-                            {bidHistory.length === 0 ? (
-                                <div className="text-secondary text-center mt-4 italic">Awaiting first bid...</div>
-                            ) : (
-                                bidHistory.map((bid, i) => (
-                                    <div key={i} className="flex justify-between py-2 text-sm border-b border-white border-opacity-5 last:border-0 hover:bg-white hover:bg-opacity-5 px-2 rounded transition-colors">
-                                        <span><span className="text-accent font-bold">{bid.teamName}</span> placed bid for <span className="font-bold">{bid.amount} Cr</span></span>
-                                        <span className="text-secondary text-xs mt-1">{bid.time}</span>
-                                    </div>
-                                ))
+                    {/* RIGHT: Teams Purse */}
+                    <div className="glass p-6 scrollable-panel mobile-order-3">
+                        <h3 className="mb-6 text-center text-accent tracking-widest font-bold text-lg flex items-center justify-center gap-3">
+                            TEAMS PURSE
+                            {unsoldPlayers.length > 0 && (
+                                <span className="unsold-badge">{unsoldPlayers.length} unsold</span>
                             )}
+                        </h3>
+                        <div className="flex flex-col gap-4">
+                            {teams.map(team => {
+                                const minBasePrice = Math.min(...this.props.players.map(p => p.basePrice));
+                                const inactive = this.isTeamInactive(team, minBasePrice);
+                                return (
+                                    <div key={team.id} className={`bg-panel p-4 rounded-lg border transition-all ${team.id === this.props.myTeamId ? 'border-accent border-opacity-50' : 'border-white border-opacity-5'} ${inactive ? 'opacity-60' : 'hover:border-accent hover:border-opacity-30'}`}>
+                                        <div className="flex justify-between mb-2 items-center">
+                                            <span className="font-bold text-lg">
+                                                {team.name}
+                                                {team.id === this.props.myTeamId && <span className="text-[10px] bg-accent text-dark px-2 py-0.5 rounded ml-2 align-middle font-bold">YOU</span>}
+                                                {inactive && <span className="text-xs bg-danger text-white px-2 py-1 rounded ml-2 align-middle">RESTING</span>}
+                                            </span>
+                                            <span className="text-accent font-black text-xl">{(team.purse || 0).toFixed(1)} <span className="text-sm">Cr</span></span>
+                                        </div>
+                                        <div className="text-xs font-semibold uppercase tracking-wide mb-3 text-secondary">
+                                            Squad: {team.players ? team.players.length : 0} / 18
+                                        </div>
+                                        {team.players && team.players.length > 0 && (
+                                            <div className="border-t border-white border-opacity-10 pt-3 flex flex-col gap-1">
+                                                {team.players.slice(-4).map((p, i) => (
+                                                    <div key={i} className="flex justify-between text-xs items-center">
+                                                        <span className="font-medium">{p.name}</span>
+                                                        <span className="text-accent font-bold">{p.soldPrice} Cr</span>
+                                                    </div>
+                                                ))}
+                                                {team.players.length > 4 && (
+                                                    <div className="text-secondary text-xs text-center mt-1">+{team.players.length - 4} more</div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
                 </div>
 
-                {/* Right: Teams List */}
-                <div className="glass p-6 scrollable-panel mobile-order-3">
-                    <h3 className="mb-6 text-center text-accent tracking-widest font-bold text-lg flex items-center justify-center gap-3">
-                        TEAMS PURSE
-                        {unsoldPlayers.length > 0 && (
-                            <span className="unsold-badge">{unsoldPlayers.length} unsold</span>
-                        )}
-                    </h3>
-                    <div className="flex flex-col gap-4">
-                        {teams.map(team => {
-                            const minBasePrice = Math.min(...this.props.players.map(p => p.basePrice));
-                            const inactive = this.isTeamInactive(team, minBasePrice);
-                            return (
-                                <div key={team.id} className={`bg-panel p-4 rounded-lg border transition-all ${inactive ? 'border-danger border-opacity-30 opacity-60' : 'border-white border-opacity-5 hover:border-accent hover:border-opacity-30'}`}>
-                                    <div className="flex justify-between mb-2 items-center">
-                                        <span className="font-bold text-lg">
-                                            {team.name}
-                                            {team.qualified !== undefined ? (
-                                                team.qualified ? 
-                                                <span className="text-[10px] bg-success text-dark px-2 py-0.5 rounded ml-2 align-middle font-bold">✅ QUALIFIED</span> :
-                                                <span className="text-[10px] bg-danger text-white px-2 py-0.5 rounded ml-2 align-middle font-bold">❌ DISQUALIFIED</span>
-                                            ) : (
-                                                inactive && <span className="text-xs bg-danger text-white px-2 py-1 rounded ml-2 align-middle">RESTING</span>
-                                            )}
-                                        </span>
-                                        <span className="text-accent font-black text-xl">{team.purse.toFixed(1)} <span className="text-sm">Cr</span></span>
-                                    </div>
-                                    <div className={`text-xs font-semibold uppercase tracking-wide mb-3 ${team.players && team.players.length >= 18 ? 'text-danger' : (team.players && team.players.length < 11 && roomData.status === 'finished') ? 'text-danger' : 'text-secondary'}`}>
-                                        Squad: {team.players ? team.players.length : 0} / 11-18
-                                    </div>
-                                    {team.players && team.players.length > 0 && (
-                                        <div className="border-t border-white border-opacity-10 pt-3 flex flex-col gap-2">
-                                            {team.players.map((p, i) => (
-                                                <div key={i} className="flex justify-between text-xs items-center p-1 hover:bg-white hover:bg-opacity-5 rounded">
-                                                    <span className="font-medium">{p.name}</span>
-                                                    <span className="text-accent font-bold bg-dark px-2 py-1 rounded">{p.soldPrice} Cr</span>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })}
-                    </div>
+                {/* ── Chat Box ── */}
+                <div className="chat-toggle-bar">
+                    <button
+                        className="chat-toggle-btn"
+                        onClick={() => this.setState(s => ({ chatOpen: !s.chatOpen }))}
+                    >
+                        💬 {chatOpen ? '▼ Hide Chat' : '▲ Show Chat'}
+                    </button>
                 </div>
+                {chatOpen && (
+                    <ChatBox
+                        roomCode={this.props.roomCode}
+                        senderName={this.props.myTeamName || teams.find(t => t.id === this.props.myTeamId)?.name || 'Viewer'}
+                    />
+                )}
+
+                {/* ── Voice Chat ── */}
+                <VoiceChat
+                    roomCode={this.props.roomCode}
+                    myName={teams.find(t => t.id === this.props.myTeamId)?.name || 'Viewer'}
+                />
             </div>
         );
     }
