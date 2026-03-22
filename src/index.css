@@ -2311,6 +2311,164 @@ label {
 }
 
 /* ============================================
+   SQUAD OVERVIEW MODAL
+   ============================================ */
+.squad-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(10px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  animation: fadeIn 0.2s ease;
+  padding: 1rem;
+}
+
+.squad-modal {
+  background: rgba(10, 15, 28, 0.95);
+  border: 1px solid rgba(212, 175, 55, 0.4);
+  border-radius: 20px;
+  width: 100%;
+  max-width: 1200px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8), 0 0 30px rgba(212, 175, 55, 0.1);
+  animation: modal-in 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  overflow: hidden;
+}
+
+.squad-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 28, 88, 0.6);
+}
+
+.squad-modal-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1.5rem;
+  cursor: pointer;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+
+.squad-modal-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.squad-modal-content {
+  display: flex;
+  flex-direction: row;
+  overflow: hidden;
+  height: 100%;
+}
+
+.squad-modal-teams-grid {
+  flex: 3;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+  padding: 1.5rem;
+  overflow-y: auto;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.squad-modal-sidebar {
+  flex: 1;
+  min-width: 250px;
+  max-width: 350px;
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem;
+  background: rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+
+.squad-modal-team {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  height: 250px;
+  overflow: hidden;
+}
+
+.squad-modal-team-header {
+  display: flex;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.squad-modal-player-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.squad-modal-player-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  background: rgba(0, 0, 0, 0.15);
+  margin-bottom: 4px;
+  border-radius: 6px;
+}
+
+.squad-modal-player-row:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+@media (max-width: 900px) {
+  .squad-modal-content {
+    flex-direction: column-reverse;
+  }
+  .squad-modal-teams-grid {
+    border-right: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  .squad-modal-sidebar {
+    min-height: 200px;
+    max-width: none;
+    flex: none;
+    flex-direction: row;
+    gap: 1.5rem;
+  }
+  .squad-modal-current {
+    flex: 1;
+  }
+  .squad-modal-unsold {
+    flex: 1;
+    margin-top: 0;
+    min-height: auto;
+  }
+}
+
+@media (max-width: 600px) {
+  .squad-modal-sidebar {
+    flex-direction: column;
+    gap: 1rem;
+  }
+}
+
+/* ============================================
    PAUSED OVERLAY (inside timer card)
    ============================================ */
 .paused-overlay {
@@ -2744,4 +2902,36 @@ label {
   color: var(--success);
   cursor: not-allowed;
   opacity: 0.85;
+}
+
+/* ============================================
+   FLOATING SIDEBAR (CHAT & VOICE)
+   ============================================ */
+.floating-sidebar {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 320px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* Allow clicking through the gaps in the sidebar container itself */
+  pointer-events: none;
+}
+
+.floating-sidebar > * {
+  /* Re-enable clicking for child elements */
+  pointer-events: auto;
+}
+
+@media (max-width: 600px) {
+  .floating-sidebar {
+    width: 100%;
+    right: 0;
+    bottom: 0;
+    padding: 10px;
+    border-radius: 16px 16px 0 0;
+    background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.8) 15%);
+  }
 }

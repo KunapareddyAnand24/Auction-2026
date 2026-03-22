@@ -6,7 +6,7 @@ import VoiceChat from './VoiceChat';
 
 class ChatBox extends Component {
     state = { message: '', messages: [] };
-    messagesEndRef = React.createRef();
+    chatMessagesRef = React.createRef();
     chatListener = null;
 
     componentDidMount() {
@@ -24,8 +24,8 @@ class ChatBox extends Component {
     }
 
     scrollToBottom = () => {
-        if (this.messagesEndRef.current) {
-            this.messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        if (this.chatMessagesRef.current) {
+            this.chatMessagesRef.current.scrollTop = this.chatMessagesRef.current.scrollHeight;
         }
     };
 
@@ -54,7 +54,7 @@ class ChatBox extends Component {
                     <span>💬 LIVE CHAT</span>
                     <span className="chat-online-dot"></span>
                 </div>
-                <div className="chat-messages">
+                <div className="chat-messages" ref={this.chatMessagesRef}>
                     {messages.length === 0 && (
                         <div className="chat-empty">Chat is live — say something!</div>
                     )}
@@ -68,7 +68,6 @@ class ChatBox extends Component {
                             </div>
                         );
                     })}
-                    <div ref={this.messagesEndRef} />
                 </div>
                 <div className="chat-input-row">
                     <input
@@ -101,6 +100,7 @@ class AuctionDashboard extends Component {
             currentPlayerImage: null,
             showUnsoldConfirm: false,
             chatOpen: true,
+            showSquadModal: false,
         };
         this.timerInterval = null;
         this.roomRef = db && this.props.roomCode ? ref(db, `rooms/${this.props.roomCode}`) : null;
@@ -274,36 +274,38 @@ class AuctionDashboard extends Component {
         if (!roomData || localTimer <= 0 || roomData.paused) return;
 
         const player = this.props.players[roomData.currentPlayerIndex];
-        const effectiveBase = roomData.reAuctionBasePrice || player.basePrice;
-        const currentBid = roomData.currentBid || effectiveBase;
-        const newBid = roomData.highestBidderId ? currentBid + 0.25 : currentBid;
-
-        if (team.purse < newBid) {
-            alert(`${team.name} doesn't have enough purse!`);
-            return;
-        }
-
+        
         try {
             if (!db || !this.roomRef) { alert('Firebase is not configured properly.'); return; }
             await runTransaction(this.roomRef, (currentData) => {
-                if (currentData) {
-                    const bidTime = Date.now();
-                    let newEndTime = currentData.endTime;
-                    const rem = Math.max(0, Math.floor((newEndTime - bidTime) / 1000));
-                    if (rem <= 5) newEndTime = bidTime + (rem + 5) * 1000;
+                if (!currentData || currentData.status !== 'active' || currentData.paused) return;
 
-                    currentData.currentBid = Math.round(newBid * 100) / 100;
-                    currentData.highestBidderId = team.id;
-                    currentData.highestBidderName = team.name;
-                    currentData.endTime = newEndTime;
+                const effectiveBase = currentData.reAuctionBasePrice || player.basePrice;
+                const currentBid = currentData.currentBid || effectiveBase;
+                const newBid = currentData.highestBidderId ? currentBid + 0.25 : currentBid;
 
-                    if (!currentData.bidHistory) currentData.bidHistory = {};
-                    currentData.bidHistory[`bid_${bidTime}`] = {
-                        teamName: team.name,
-                        amount: Math.round(newBid * 100) / 100,
-                        time: new Date().toLocaleTimeString()
-                    };
-                }
+                // Only allow if new bid is greater than or equal to current bid and team has purse
+                if (newBid < currentBid || team.purse < newBid) return;
+
+                const bidTime = Date.now();
+                let newEndTime = currentData.endTime;
+                const rem = Math.max(0, Math.floor((newEndTime - bidTime) / 1000));
+                
+                // Add 5 seconds if remaining time is <= 5 seconds, up to max
+                if (rem <= 5) newEndTime = bidTime + (rem + 5) * 1000;
+
+                currentData.currentBid = Math.round(newBid * 100) / 100;
+                currentData.highestBidderId = team.id;
+                currentData.highestBidderName = team.name;
+                currentData.endTime = newEndTime;
+
+                if (!currentData.bidHistory) currentData.bidHistory = {};
+                currentData.bidHistory[`bid_${bidTime}`] = {
+                    teamName: team.name,
+                    amount: Math.round(newBid * 100) / 100,
+                    time: new Date().toLocaleTimeString()
+                };
+                
                 return currentData;
             });
         } catch (error) {
@@ -540,20 +542,30 @@ class AuctionDashboard extends Component {
         return (
             <div className="auction-layout-wrapper">
                 {/* ── Set Banner ── */}
-                {!isReAuction && (
-                    <div className="set-banner">
-                        <span className="set-banner-icon">🏏</span>
-                        {currentSetName}
-                        <span className={`status-badge ${statusClass}`}>{statusLabel}</span>
-                    </div>
-                )}
-                {isReAuction && (
-                    <div className="reauction-banner">
-                        <span className="reauction-banner-icon">🔄</span>
-                        RE-AUCTION ROUND — Unsold Players
-                        <span className={`status-badge ${statusClass}`}>{statusLabel}</span>
-                    </div>
-                )}
+                <div className="flex justify-between items-center mb-0 bg-dark bg-opacity-50 p-2 rounded-t-xl border border-white border-opacity-10 border-b-0">
+                    <div style={{ width: '140px' }}></div> {/* Spacer for centering */}
+                    {!isReAuction && (
+                        <div className="set-banner !mb-0 !rounded-none !border-none !bg-transparent" style={{ padding: '4px 12px' }}>
+                            <span className="set-banner-icon">🏏</span>
+                            {currentSetName}
+                            <span className={`status-badge ${statusClass}`}>{statusLabel}</span>
+                        </div>
+                    )}
+                    {isReAuction && (
+                        <div className="reauction-banner !static !transform-none !mb-0">
+                            <span className="reauction-banner-icon">🔄</span>
+                            RE-AUCTION ROUND
+                            <span className={`status-badge ${statusClass}`}>{statusLabel}</span>
+                        </div>
+                    )}
+                    <button 
+                        className="btn btn-outline border-accent text-accent py-1 px-4 text-xs font-bold whitespace-nowrap"
+                        onClick={() => this.setState({ showSquadModal: true })}
+                        title="View All Squads & Players"
+                    >
+                        👀 VIEW SQUADS
+                    </button>
+                </div>
 
                 {/* ── Set Complete Banner ── */}
                 {setCelebration && (
@@ -625,6 +637,100 @@ class AuctionDashboard extends Component {
                                 <button className="btn btn-outline px-6 py-2" onClick={() => this.setState({ showUnsoldConfirm: false })}>
                                     Cancel
                                 </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* ── Squad Overview Modal ── */}
+                {this.state.showSquadModal && (
+                    <div className="squad-modal-overlay" onClick={() => this.setState({ showSquadModal: false })}>
+                        <div className="squad-modal" onClick={e => e.stopPropagation()}>
+                            <div className="squad-modal-header">
+                                <h2 className="text-2xl font-black text-accent tracking-widest flex items-center gap-3">
+                                    📋 AUCTION OVERVIEW
+                                </h2>
+                                <button className="squad-modal-close" onClick={() => this.setState({ showSquadModal: false })}>✕</button>
+                            </div>
+                            
+                            <div className="squad-modal-content">
+                                {/* Teams Grid */}
+                                <div className="squad-modal-teams-grid">
+                                    {teams.map(team => {
+                                        const minBasePrice = Math.min(...this.props.players.map(p => p.basePrice));
+                                        const inactive = this.isTeamInactive(team, minBasePrice);
+                                        const playerCount = team.players ? team.players.length : 0;
+                                        
+                                        return (
+                                            <div key={team.id} className={`squad-modal-team ${team.id === this.props.myTeamId ? 'border-accent' : ''} ${inactive ? 'opacity-70' : ''}`}>
+                                                <div className="squad-modal-team-header justify-between">
+                                                    <div className="font-bold flex items-center gap-2">
+                                                        {team.name}
+                                                        {inactive && <span className="text-[10px] bg-danger text-white px-1.5 py-0.5 rounded">REST</span>}
+                                                    </div>
+                                                    <div className="text-accent font-black">
+                                                        {team.purse.toFixed(1)} <span className="text-xs">Cr</span>
+                                                    </div>
+                                                </div>
+                                                <div className="text-[10px] text-secondary text-right px-2 pb-1 font-bold">
+                                                    {playerCount}/18 PLAYERS
+                                                </div>
+                                                
+                                                <div className="squad-modal-player-list">
+                                                    {playerCount === 0 ? (
+                                                        <div className="text-center text-xs text-secondary italic py-4">No players bought</div>
+                                                    ) : (
+                                                        team.players.map((p, i) => (
+                                                            <div key={i} className="squad-modal-player-row">
+                                                                <div className="flex-1 truncate pr-2 font-medium text-[11px]">{p.name}</div>
+                                                                <div className="text-[9px] text-secondary uppercase w-16 truncate">{p.role}</div>
+                                                                <div className="text-accent font-bold text-xs w-12 text-right">{p.soldPrice}</div>
+                                                            </div>
+                                                        ))
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                                
+                                {/* Right Sidebar: Current & Unsold */}
+                                <div className="squad-modal-sidebar">
+                                    <div className="squad-modal-current">
+                                        <div className="text-xs font-bold text-accent tracking-widest uppercase mb-2">Currently in Auction</div>
+                                        <div className="flex items-center gap-3 bg-dark bg-opacity-50 p-3 rounded-lg border border-accent border-opacity-30">
+                                            <div className="w-12 h-12 rounded overflow-hidden flex-shrink-0 relative">
+                                                <img src={this.state.currentPlayerImage || player.image} alt={player.name} className="w-full h-full object-cover" />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="font-bold text-sm truncate text-white">{player.name}</div>
+                                                <div className="text-xs text-secondary flex justify-between mt-1">
+                                                    <span>{player.role}</span>
+                                                    <span className="text-accent font-bold">{effectiveBasePrice} Cr</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="squad-modal-unsold flex-1 flex flex-col mt-4 min-h-[200px]">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <div className="text-xs font-bold text-danger tracking-widest uppercase">Unsold Players</div>
+                                            <div className="text-xs bg-danger bg-opacity-20 text-danger px-2 py-0.5 rounded-full font-bold">{unsoldPlayers.length}</div>
+                                        </div>
+                                        <div className="flex-1 overflow-y-auto pr-1 bg-dark bg-opacity-30 p-2 rounded-lg border border-danger border-opacity-20 space-y-1">
+                                            {unsoldPlayers.length === 0 ? (
+                                                <div className="text-center text-xs text-secondary italic py-4">No unsold players</div>
+                                            ) : (
+                                                unsoldPlayers.map((p, i) => (
+                                                    <div key={i} className="flex justify-between items-center text-[11px] py-1 border-b border-white border-opacity-5 last:border-0 pl-1">
+                                                        <span className="truncate flex-1">{p.name}</span>
+                                                        <span className="text-secondary opacity-70 w-16 text-right truncate text-[9px] uppercase">{p.role}</span>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -886,27 +992,36 @@ class AuctionDashboard extends Component {
                     </div>
                 </div>
 
-                {/* ── Chat Box ── */}
-                <div className="chat-toggle-bar">
-                    <button
-                        className="chat-toggle-btn"
-                        onClick={() => this.setState(s => ({ chatOpen: !s.chatOpen }))}
-                    >
-                        💬 {chatOpen ? '▼ Hide Chat' : '▲ Show Chat'}
-                    </button>
-                </div>
-                {chatOpen && (
-                    <ChatBox
+                {/* ── Floating Sidebar (Chat & Voice) ── */}
+                <div className="floating-sidebar">
+                    {/* Voice Chat */}
+                    <VoiceChat
                         roomCode={this.props.roomCode}
-                        senderName={this.props.myTeamName || teams.find(t => t.id === this.props.myTeamId)?.name || 'Viewer'}
+                        myName={teams.find(t => t.id === this.props.myTeamId)?.name || 'Viewer'}
                     />
-                )}
-
-                {/* ── Voice Chat ── */}
-                <VoiceChat
-                    roomCode={this.props.roomCode}
-                    myName={teams.find(t => t.id === this.props.myTeamId)?.name || 'Viewer'}
-                />
+                    
+                    {/* Chat Box */}
+                    {chatOpen && (
+                        <ChatBox
+                            roomCode={this.props.roomCode}
+                            senderName={this.props.myTeamName || teams.find(t => t.id === this.props.myTeamId)?.name || 'Viewer'}
+                        />
+                    )}
+                    
+                    <div className="chat-toggle-bar !mt-0">
+                        <button
+                            className="chat-toggle-btn w-full shadow-lg border border-accent border-opacity-30"
+                            onClick={() => this.setState(s => ({ chatOpen: !s.chatOpen }))}
+                            style={{ 
+                                background: 'linear-gradient(135deg, rgba(10, 15, 28, 0.95), rgba(0, 28, 88, 0.9))',
+                                padding: '10px 20px',
+                                fontSize: '0.85rem'
+                            }}
+                        >
+                            💬 {chatOpen ? '▼ HIDE CHAT' : '▲ SHOW LIVE CHAT'}
+                        </button>
+                    </div>
+                </div>
             </div>
         );
     }
