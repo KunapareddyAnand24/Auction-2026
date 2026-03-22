@@ -270,46 +270,48 @@ class AuctionDashboard extends Component {
     };
 
     handleBid = async (team) => {
-        const { roomData, localTimer } = this.state;
+        const { roomData, localTimer, serverTimeOffset } = this.state;
         if (!roomData || localTimer <= 0 || roomData.paused) return;
 
         const player = this.props.players[roomData.currentPlayerIndex];
         
         try {
             if (!db || !this.roomRef) { alert('Firebase is not configured properly.'); return; }
-            await runTransaction(this.roomRef, (currentData) => {
-                if (!currentData || currentData.status !== 'active' || currentData.paused) return;
+            
+            // To guarantee instant robust updates without the strict and heavy payload limits of full-node transactions,
+            // we use update() for the specific fields. 
+            if (roomData.status !== 'active' || roomData.paused) return;
 
-                const effectiveBase = currentData.reAuctionBasePrice || player.basePrice;
-                const currentBid = currentData.currentBid || effectiveBase;
-                const newBid = currentData.highestBidderId ? currentBid + 0.25 : currentBid;
+            const effectiveBase = roomData.reAuctionBasePrice || player.basePrice;
+            const currentBid = roomData.currentBid || effectiveBase;
+            const newBid = roomData.highestBidderId ? currentBid + 0.25 : currentBid;
 
-                // Only allow if new bid is greater than or equal to current bid and team has purse
-                if (newBid < currentBid || team.purse < newBid) return;
+            // Only allow if new bid is greater than or equal to current bid and team has purse
+            if (newBid < currentBid || team.purse < newBid) return;
 
-                const bidTime = Date.now();
-                let newEndTime = currentData.endTime;
-                const rem = Math.max(0, Math.floor((newEndTime - bidTime) / 1000));
-                
-                // Add 5 seconds if remaining time is <= 5 seconds, up to max
-                if (rem <= 5) newEndTime = bidTime + (rem + 5) * 1000;
+            const bidTime = Date.now() + (serverTimeOffset || 0);
+            let newEndTime = roomData.endTime;
+            const rem = Math.max(0, Math.floor((newEndTime - bidTime) / 1000));
+            
+            // Add 5 seconds if remaining time is <= 5 seconds, up to max
+            if (rem <= 5) newEndTime = bidTime + (rem + 5) * 1000;
 
-                currentData.currentBid = Math.round(newBid * 100) / 100;
-                currentData.highestBidderId = team.id;
-                currentData.highestBidderName = team.name;
-                currentData.endTime = newEndTime;
-
-                if (!currentData.bidHistory) currentData.bidHistory = {};
-                currentData.bidHistory[`bid_${bidTime}`] = {
+            const updates = {
+                currentBid: Math.round(newBid * 100) / 100,
+                highestBidderId: team.id,
+                highestBidderName: team.name,
+                endTime: newEndTime,
+                [`bidHistory/bid_${bidTime}`]: {
                     teamName: team.name,
                     amount: Math.round(newBid * 100) / 100,
                     time: new Date().toLocaleTimeString()
-                };
-                
-                return currentData;
-            });
+                }
+            };
+            
+            await update(this.roomRef, updates);
         } catch (error) {
-            console.error('Bid transaction failed:', error);
+            console.error('Bid update failed:', error);
+            alert('Failed to place bid. Please try again.');
         }
     };
 
