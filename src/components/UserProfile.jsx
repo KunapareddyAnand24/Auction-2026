@@ -1,4 +1,4 @@
-import React, { Component } from 'react';
+﻿import React, { Component } from 'react';
 import { firestore, auth } from '../firebase';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 
@@ -131,7 +131,7 @@ class UserProfile extends Component {
                                         <div className="text-xs text-secondary">{new Date(match.timestamp).toLocaleDateString()} at {new Date(match.timestamp).toLocaleTimeString()}</div>
                                     </div>
                                     <div className={`px-4 py-1 rounded-full text-xs font-bold ${match.isWinner ? 'bg-success text-dark' : 'bg-danger text-white'}`}>
-                                        {match.isWinner ? '🏆 WINNER' : 'DEFEAT'}
+                                        {match.isWinner ? ' WINNER' : 'DEFEAT'}
                                     </div>
                                 </div>
                                 <div className="text-sm text-secondary mb-3">

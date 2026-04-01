@@ -1,4 +1,4 @@
-import React, { Component } from 'react';
+﻿import React, { Component } from 'react';
 
 const FANTASY_RULES = [
   {
@@ -100,7 +100,7 @@ class ModeSelector extends Component {
     const modes = [
       {
         key: 'computer',
-        icon: '🤖',
+        icon: '',
         title: 'VS Computer',
         desc: 'Challenge the Gemini AI in a solo auction. Build your dream squad against an intelligent computer opponent.',
         badge: 'Solo Mode',

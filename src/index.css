@@ -1817,21 +1817,87 @@ label {
     padding: 1.5rem;
   }
 
+  /* Auction Mobile App Layout (100dvh No-Scroll) */
+  body, html {
+    height: 100dvh;
+    overflow: hidden !important;
+    touch-action: pan-x pan-y;
+  }
+  .app-container, #root {
+    height: 100%;
+  }
+  .container {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: 0.5rem;
+  }
   .auction-grid {
     display: flex;
     flex-direction: column;
+    flex: 1;
+    overflow: hidden;
+    gap: 0.5rem;
+    padding-bottom: 40px; /* Space for ticker */
   }
 
+  .player-image-container img {
+    height: 120px !important;
+  }
+
+  /* Shrink text for space */
+  .text-4xl { font-size: 1.5rem !important; }
+  .text-5xl { font-size: 1.8rem !important; }
+  .text-6xl { font-size: 2rem !important; }
+
+  /* Player Card */
+  .mobile-order-1 {
+    order: 1;
+    padding: 0.5rem !important;
+  }
+
+  /* Timer / Bid Control */
+  .mobile-order-2 {
+    order: 2;
+    padding: 0.5rem !important;
+  }
+  .mobile-order-2 .text-8xl { font-size: 4rem !important; } /* shrink huge price */
+
+  /* Teams List - Transform to Horizontal Scroll */
+  .mobile-order-3 {
+    order: 3;
+    display: flex;
+    flex-direction: column;
+    padding: 0.5rem !important;
+    height: 100%;
+    overflow: hidden !important;
+  }
+  
+  .mobile-order-3 h3 {
+    margin-bottom: 0.25rem !important;
+    padding-bottom: 0.25rem !important;
+  }
+
+  .mobile-order-3 > .flex-col {
+    flex-direction: row !important;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 0.5rem;
+    padding-bottom: 8px;
+  }
+
+  .mobile-order-3 > .flex-col > .bg-panel {
+    min-width: 240px;
+    flex-shrink: 0;
+  }
+
+  /* Restored missing rules */
   .grid-cols-2 {
     grid-template-columns: 1fr;
   }
 
   .grid-cols-auto-fill {
     grid-template-columns: 1fr;
-  }
-
-  .player-image-container img {
-    height: 200px;
   }
 
   .mode-grid {
@@ -1847,21 +1913,6 @@ label {
   .mode-card-icon {
     font-size: 2.5rem;
     margin-bottom: 1rem;
-  }
-
-  /* Auction Mobile Ordering */
-  .mobile-order-1 {
-    order: 1;
-  }
-
-  /* Timer / Bid Control */
-  .mobile-order-2 {
-    order: 2;
-  }
-
-  /* Player Card */
-  .mobile-order-3 {
-    order: 3;
   }
 
   .prediction-vs {

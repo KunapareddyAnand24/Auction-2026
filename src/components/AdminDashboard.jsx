@@ -1,4 +1,4 @@
-import React, { Component } from 'react';
+﻿import React, { Component } from 'react';
 import { db, firestore } from '../firebase';
 import { ref, onValue, off } from 'firebase/database';
 import { collection, getDocs, query, orderBy, deleteDoc, doc } from 'firebase/firestore';
@@ -140,7 +140,7 @@ class AdminDashboard extends Component {
                 {allTimeBid && (
                     <div className="glass p-6 mb-8" style={{ borderTop: '3px solid #d4af37', background: 'linear-gradient(135deg, rgba(212,175,55,0.08), rgba(0,0,0,0.3))' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-                            <span style={{ fontSize: '2rem' }}>🏆</span>
+                            <span style={{ fontSize: '2rem' }}></span>
                             <div>
                                 <div style={{ fontSize: '0.7rem', letterSpacing: '0.2em', color: '#d4af37', fontWeight: 700, textTransform: 'uppercase' }}>All-Time Record Bid</div>
                                 <div style={{ fontSize: '1.2rem', fontWeight: 900, color: '#fff' }}>Hall of Fame</div>

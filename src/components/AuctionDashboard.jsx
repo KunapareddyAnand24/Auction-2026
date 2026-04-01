@@ -1,4 +1,4 @@
-import React, { Component } from 'react';
+﻿import React, { Component } from 'react';
 import { db } from '../firebase';
 import { ref, update, onValue, runTransaction, push } from 'firebase/database';
 import { PLAYER_SETS } from '../data/playersData';
@@ -493,7 +493,7 @@ class AuctionDashboard extends Component {
 
         const player = this.props.players[roomData.currentPlayerIndex];
         const bidderId = roomData.highestBidderId;
-        const isSteal = bidderId && roomData.currentBid <= player.basePrice * 1.1;
+        const isSteal = bidderId && player.rating >= 80 && roomData.currentBid <= player.basePrice * 1.25;
 
         if (bidderId) {
             const updatedTeams = roomData.teams.map(t => {
@@ -645,7 +645,7 @@ class AuctionDashboard extends Component {
                                 <span></span><span></span><span></span><span></span>
                                 <span></span><span></span><span></span><span></span>
                             </div>
-                            <span className="sold-emoji">{soldCelebration.isSteal ? '🦅' : '🎉'}</span>
+                            <span className="sold-emoji">{soldCelebration.isSteal ? '' : ''}</span>
                             <div className="sold-title">{soldCelebration.isSteal ? 'STEAL OF THE AUCTION!' : 'Congratulations!'}</div>
                             <div className="sold-player-name">{soldCelebration.playerName}</div>
                             <div className="sold-team-name">Sold to {soldCelebration.teamName}</div>
@@ -669,7 +669,7 @@ class AuctionDashboard extends Component {
                 {unsoldCelebration && (
                     <div className="unsold-overlay" onClick={() => this.setState({ unsoldCelebration: null })}>
                         <div className="unsold-card">
-                            <span className="unsold-emoji">😔</span>
+                            <span className="unsold-emoji"></span>
                             <div className="unsold-title">UNSOLD</div>
                             <div className="sold-player-name">{unsoldCelebration.playerName}</div>
                             <div className="unsold-subtitle">No bids received</div>
@@ -709,7 +709,7 @@ class AuctionDashboard extends Component {
                         <div className="squad-modal" onClick={e => e.stopPropagation()}>
                             <div className="squad-modal-header">
                                 <h2 className="text-2xl font-black text-accent tracking-widest flex items-center gap-3">
-                                    📋 AUCTION OVERVIEW
+                                     AUCTION OVERVIEW
                                 </h2>
                                 <button className="squad-modal-close" onClick={() => this.setState({ showSquadModal: false })}>✕</button>
                             </div>
@@ -905,7 +905,7 @@ class AuctionDashboard extends Component {
                                 const myTeam = (roomData.teams || []).find(t => t.id === this.props.myTeamId);
                                 const isMe = myTeam && roomData.highestBidderId === myTeam.id;
                                 const currentBidVal = roomData.currentBid || player.basePrice;
-                                const isStealNow = currentBidVal <= player.basePrice * 1.1;
+                                const isStealNow = player.rating >= 80 && currentBidVal <= player.basePrice * 1.25;
                                 return (
                                     <div style={{
                                         marginTop: '12px',
@@ -918,8 +918,8 @@ class AuctionDashboard extends Component {
                                         fontSize: '1rem',
                                         color: isMe ? '#d4af37' : '#22c55e',
                                     }}>
-                                        {isMe ? '👤 ' : '🏆 '} BID BY: {roomData.highestBidderName.toUpperCase()}
-                                        {isStealNow && roomData.highestBidderId && <span style={{ marginLeft: '8px', color: '#22c55e', fontSize: '0.75rem' }}>🦅 STEAL PRICE!</span>}
+                                        {isMe ? ' ' : ' '} BID BY: {roomData.highestBidderName.toUpperCase()}
+                                        {isStealNow && roomData.highestBidderId && <span style={{ marginLeft: '8px', color: '#22c55e', fontSize: '0.75rem' }}> STEAL PRICE!</span>}
                                     </div>
                                 );
                             })()}
@@ -1008,7 +1008,7 @@ class AuctionDashboard extends Component {
                         </div>
 
                         {/* Bid History */}
-                        <div className="glass h-full max-h-[180px] p-4 flex flex-col scrollable-panel">
+                        <div className="glass h-full max-h-[180px] p-4 flex flex-col scrollable-panel overflow-y-auto">
                             <h4 className="mb-3 text-sm tracking-widest text-accent font-bold uppercase border-b border-white border-opacity-10 pb-2">LIVE BID HISTORY</h4>
                             <div className="flex-1 overflow-y-auto pr-2">
                                 {bidHistory.length === 0 ? (
@@ -1021,7 +1021,7 @@ class AuctionDashboard extends Component {
                                             <div key={i} className="flex justify-between py-2 text-sm border-b border-white border-opacity-5 last:border-0 hover:bg-white hover:bg-opacity-5 px-2 rounded transition-colors">
                                                 <span>
                                                     <span style={{ color: isMe ? '#d4af37' : '#22c55e' }} className="font-bold">
-                                                        {isMe ? '👤 ' : '🏆 '}{bid.teamName}
+                                                        {isMe ? ' ' : ' '}{bid.teamName}
                                                     </span>
                                                     {' '}bid <span className="font-bold">{bid.amount} Cr</span>
                                                 </span>
@@ -1035,7 +1035,7 @@ class AuctionDashboard extends Component {
                     </div>
 
                     {/* RIGHT: Teams Purse + Sold Timeline */}
-                    <div className="glass p-6 mobile-order-3 flex flex-col gap-4" style={{ maxHeight: '88vh', overflowY: 'auto' }}>
+                    <div className="glass p-6 mobile-order-3 flex flex-col gap-4 overflow-y-auto overflow-x-hidden" style={{ height: '100%', maxHeight: '88vh' }}>
                         <h3 className="text-center text-accent tracking-widest font-bold text-lg flex items-center justify-center gap-3 sticky top-0 pb-2 z-10" style={{ background: 'rgba(10,15,28,0.95)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
                             TEAMS
                             {unsoldPlayers.length > 0 && (
@@ -1043,35 +1043,7 @@ class AuctionDashboard extends Component {
                             )}
                         </h3>
 
-                        {/* Auction Timeline */}
-                        {soldTimeline.length > 0 && (
-                            <div className="bg-panel rounded-lg p-3" style={{ border: '1px solid rgba(255,255,255,0.07)' }}>
-                                <div className="text-xs text-accent font-bold tracking-widest uppercase mb-2">📋 SOLD TIMELINE</div>
-                                <div style={{ maxHeight: '180px', overflowY: 'auto' }}>
-                                    {soldTimeline.map((entry, i) => {
-                                        const entryTeam = teams.find(t => t.name === entry.teamName);
-                                        const isMyTeam = entryTeam && entryTeam.id === this.props.myTeamId;
-                                        const isStealEntry = entry.soldPrice <= entry.basePrice * 1.1;
-                                        return (
-                                            <div key={i} className="flex justify-between items-center py-1.5 text-xs" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                                                <div>
-                                                    <div className="font-bold text-white" style={{ fontSize: '11px' }}>{entry.name || entry.playerName}</div>
-                                                    <div style={{ color: '#888', fontSize: '10px' }}>{entry.role}</div>
-                                                </div>
-                                                <div className="text-right">
-                                                    <div style={{ color: isMyTeam ? '#d4af37' : '#22c55e', fontWeight: 'bold', fontSize: '10px' }}>
-                                                        {entry.teamName?.split(' ')[0]}
-                                                    </div>
-                                                    <div className="text-accent font-black" style={{ fontSize: '11px' }}>
-                                                        {entry.soldPrice}Cr {isStealEntry ? '🦅' : ''}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        )}
+
 
                         {/* Team Panels fully scrollable */}
                         <div className="flex flex-col gap-4">
@@ -1108,6 +1080,25 @@ class AuctionDashboard extends Component {
                                 );
                             })}
                         </div>
+                        {soldTimeline.length > 0 && (
+                        <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: '#050508', padding: '10px 0', borderTop: '2px solid #d4af37', zIndex: 100, boxShadow: '0 -4px 15px rgba(0,0,0,0.5)' }}>
+                            <marquee loop="-1" scrollamount="8" style={{ color: 'white', fontWeight: 'bold', fontSize: '1.2rem', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                            <div style={{ display: 'flex', gap: '50px' }}>
+                                {soldTimeline.map((entry, i) => {
+                                    const entryTeam = teams.find(t => t.name === entry.teamName);
+                                    const isMyTeam = entryTeam && entryTeam.id === this.props.myTeamId;
+                                    const isStealEntry = entry.soldPrice <= (entry.basePrice || 0) * 1.25 && entry.rating >= 80;
+                                    return (
+                                    <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                                        <span style={{ color: '#d4af37' }}></span> {entry.name || entry.playerName} sold to <span style={{ color: isMyTeam ? '#d4af37' : '#22c55e' }}>{entry.teamName}</span> for <span style={{ color: '#d4af37' }}>{entry.soldPrice || entry.price} Cr</span> {isStealEntry || entry.isSteal ? <span style={{ color: '#22c55e' }}> (STEAL)</span> : ''}
+                                    </span>
+                                    );
+                                })}
+                            </div>
+                            </marquee>
+                        </div>
+                        )}
+
                     </div>
                 </div>
 

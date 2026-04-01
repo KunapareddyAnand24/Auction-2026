@@ -1,4 +1,4 @@
-import React, { Component } from 'react';
+﻿import React, { Component } from 'react';
 import { ref, onValue, update } from 'firebase/database';
 import { db, firestore, auth } from '../firebase';
 import { collection, addDoc } from 'firebase/firestore';
@@ -298,7 +298,7 @@ class ResultsPage extends Component {
                 {matchPrediction && (
                     <div className="prediction-overlay" onClick={() => this.setState({ matchPrediction: null })}>
                         <div className="prediction-card" onClick={e => e.stopPropagation()}>
-                            <h2 className="gradient-text text-3xl font-black text-center mb-6">🤖 AI MATCH PREDICTION</h2>
+                            <h2 className="gradient-text text-3xl font-black text-center mb-6"> AI MATCH PREDICTION</h2>
 
                             {/* VS Header */}
                             <div className="prediction-vs">
@@ -381,7 +381,7 @@ class ResultsPage extends Component {
                             {/* Auction Highlights */}
                             {matchPrediction.highlights && (
                                 <div className="mt-8 mb-6 p-4 rounded-xl border border-accent border-opacity-30" style={{ background: 'rgba(212,175,55,0.05)' }}>
-                                    <h3 className="text-accent text-center text-xs font-bold tracking-widest uppercase mb-4">🏆 Auction Highlights</h3>
+                                    <h3 className="text-accent text-center text-xs font-bold tracking-widest uppercase mb-4"> Auction Highlights</h3>
                                     <div className="grid grid-cols-3 gap-3 text-center">
                                         {matchPrediction.highlights.highestPaid && (
                                             <div>
@@ -393,7 +393,7 @@ class ResultsPage extends Component {
                                         )}
                                         {matchPrediction.highlights.stealPlayer && (
                                             <div>
-                                                <div className="text-2xl mb-1">🦅</div>
+                                                <div className="text-2xl mb-1"></div>
                                                 <div className="text-[9px] text-secondary uppercase font-bold tracking-wider">Steal Buy</div>
                                                 <div className="text-sm font-black text-white">{matchPrediction.highlights.stealPlayer.name}</div>
                                                 <div className="text-xs text-success">{matchPrediction.highlights.stealPlayer.soldPrice} Cr</div>
@@ -413,7 +413,7 @@ class ResultsPage extends Component {
 
                             {/* Winner */}
                             <div className={`prediction-winner ${matchPrediction.winner.id === teams[0]?.id ? 'prediction-winner--team1' : 'prediction-winner--team2'}`}>
-                                <div className="prediction-winner-label">🏆 Predicted Winner</div>
+                                <div className="prediction-winner-label"> Predicted Winner</div>
                                 <div className={`prediction-winner-name ${matchPrediction.winner.id === teams[0]?.id ? 'text-accent' : 'text-success'}`}>
                                     {matchPrediction.winner.name}
                                 </div>
@@ -435,7 +435,7 @@ class ResultsPage extends Component {
                 {allTeamsReady && !matchPrediction && (
                     <div className="text-center mb-12 animate-fade-in">
                         <button className="btn btn-primary px-10 py-4 text-lg animate-pulse" onClick={this.analyzeMatch}>
-                            🤖 Predict Match Winner
+                             Predict Match Winner
                         </button>
                     </div>
                 )}

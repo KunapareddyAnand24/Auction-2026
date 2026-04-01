@@ -1,4 +1,4 @@
-import React, { Component } from 'react';
+﻿import React, { Component } from 'react';
 import playersData from '../data/playersData';
 
 const AI_TEAM_NAMES = ['Mumbai Indians', 'Delhi Capitals', 'Kolkata Knight Riders', 'Rajasthan Royals', 'Gujarat Titans', 'Lucknow Super Giants', 'Punjab Kings', 'Sunrisers Hyderabad'];
@@ -9,19 +9,13 @@ const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models
 
 async function askGeminiToBid({ playerName, role, rating, stats, currentBid, aiPurse, aiSquadCount, maxBid }) {
   const prompt = `
-You are an IPL franchise manager AI. Decide whether to bid on this player in an auction.
-
-Player: ${playerName}
-Role: ${role}
-Rating: ${rating}/100
-Stats: ${JSON.stringify(stats)}
-Current Bid: ${currentBid} Cr
-Your Remaining Purse: ${aiPurse} Cr
-Your Squad Size: ${aiSquadCount}/18
+You are an expert IPL franchise manager AI. Decide whether to bid on this player.
+Player: ${playerName} (${role}) | Rating: ${rating}/100
+Current Bid: ${currentBid} Cr | Your Purse: ${aiPurse} Cr | Your Squad: ${aiSquadCount}/18
 Max you would pay: ${maxBid} Cr
 
-Should you bid? Reply with ONLY a JSON object like:
-{"bid": true, "reason": "brief reason"} or {"bid": false, "reason": "brief reason"}
+Should you bid? Reply ONLY with a valid raw JSON object. NO markdown, NO formatting. Example:
+{"bid": true, "reason": "Good value player"}
 `;
 
   try {
@@ -30,12 +24,16 @@ Should you bid? Reply with ONLY a JSON object like:
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.7, maxOutputTokens: 100 }
+        generationConfig: { temperature: 0.1, maxOutputTokens: 60 }
       })
     });
     const data = await res.json();
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    const jsonMatch = text.match(/\{.*\}/s);
+    let text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    if (text.startsWith('{') && text.endsWith('}')) {
+      return JSON.parse(text);
+    }
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0]);
     }
@@ -68,7 +66,7 @@ class ComputerAuction extends Component {
       status: 'waiting',
       timer: 15,
       aiThinking: false,
-      aiThinkingText: '🤖 AI is thinking',
+      aiThinkingText: ' AI is thinking',
       bidHistory: [],
       bidPopup: null,
       soldCelebration: null,
@@ -243,12 +241,12 @@ class ComputerAuction extends Component {
 
     const maxWillingPrice = Math.ceil(player.basePrice * (player.rating / 50));
 
-    this.setState({ aiThinking: true, aiThinkingText: '🤖 AI is thinking' });
+    this.setState({ aiThinking: true, aiThinkingText: ' AI is thinking' });
 
     // Try Gemini AI first
     let shouldBid = null;
     if (GEMINI_API_KEY && !GEMINI_API_KEY.includes('placeholder')) {
-      this.setState({ aiThinkingText: '🤖 Consulting Gemini AI...' });
+      this.setState({ aiThinkingText: ' Consulting Gemini AI...' });
       const decision = await askGeminiToBid({
         playerName: player.name,
         role: player.role,
@@ -262,7 +260,7 @@ class ComputerAuction extends Component {
       if (decision !== null) {
         shouldBid = decision.bid;
         if (decision.reason) {
-          this.setState({ aiThinkingText: `🤖 ${decision.reason.substring(0, 40)}...` });
+          this.setState({ aiThinkingText: ` ${decision.reason.substring(0, 40)}...` });
         }
       }
     }
@@ -277,10 +275,7 @@ class ComputerAuction extends Component {
 
     if (!shouldBid) {
       this.setState({ aiThinking: false });
-      if (this.state.timer > 3) {
-        this.scheduleAiBid();
-      }
-      return;
+      return; // Do not schedule another checking bid if price hasn't increased!
     }
 
     if (newBid > maxWillingPrice && shouldBid === null) {
@@ -386,7 +381,7 @@ class ComputerAuction extends Component {
 
     if (highestBidderId) {
       const teamKey = highestBidderId === 1 ? 'userTeam' : 'aiTeam';
-      const isSteal = currentBid <= player.basePrice * 1.1;
+      const isSteal = player.rating >= 80 && currentBid <= player.basePrice * 1.25;
       const newTimelineEntry = {
         playerName: player.name,
         role: player.role,
@@ -482,7 +477,7 @@ class ComputerAuction extends Component {
           
           {/* Auction Highlights */}
           <div className="glass p-6 mb-8 max-w-3xl mx-auto">
-            <h3 className="text-accent font-black text-xl tracking-widest mb-5 uppercase text-center">🏆 Auction Highlights</h3>
+            <h3 className="text-accent font-black text-xl tracking-widest mb-5 uppercase text-center"> Auction Highlights</h3>
             <div className="grid grid-cols-1 gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
               {highestPaidPlayer && (
                 <div className="bg-panel p-4 rounded-xl border border-accent border-opacity-40 text-center">
@@ -495,7 +490,7 @@ class ComputerAuction extends Component {
               )}
               {stealPlayer && (
                 <div className="bg-panel p-4 rounded-xl border border-success border-opacity-40 text-center">
-                  <div className="text-3xl mb-2">🦅</div>
+                  <div className="text-3xl mb-2"></div>
                   <div className="text-xs text-secondary uppercase tracking-widest mb-1 font-bold">Steal of Auction</div>
                   <div className="text-white font-black text-lg">{stealPlayer.name}</div>
                   <div className="text-success font-bold text-xl">{stealPlayer.soldPrice} Cr</div>
@@ -555,7 +550,7 @@ class ComputerAuction extends Component {
                 <span></span><span></span><span></span><span></span>
                 <span></span><span></span><span></span><span></span>
               </div>
-              <span className="sold-emoji">{soldCelebration.isSteal ? '🦅' : '🎉'}</span>
+              <span className="sold-emoji">{soldCelebration.isSteal ? '' : ''}</span>
               <div className="sold-title">{soldCelebration.isSteal ? 'STEAL OF THE AUCTION!' : 'Congratulations!'}</div>
               <div className="sold-player-name">{soldCelebration.playerName}</div>
               <div className="sold-team-name">Sold to {soldCelebration.teamName}</div>
@@ -580,7 +575,7 @@ class ComputerAuction extends Component {
         {unsoldCelebration && (
           <div className="unsold-overlay" onClick={() => this.setState({ unsoldCelebration: null })}>
             <div className="unsold-card">
-              <span className="unsold-emoji">😔</span>
+              <span className="unsold-emoji"></span>
               <div className="unsold-title">UNSOLD</div>
               <div className="sold-player-name">{unsoldCelebration.playerName}</div>
               <div className="unsold-subtitle">No bids received</div>
@@ -628,22 +623,6 @@ class ComputerAuction extends Component {
             </div>
           )}
 
-          {/* recently sold timeline mini */}
-          {soldTimeline.length > 0 && (
-            <div className="mt-2">
-              <div className="text-xs text-accent font-bold tracking-widest uppercase mb-2">📋 Last Sold</div>
-              <div style={{ maxHeight: '120px', overflowY: 'auto' }}>
-                {soldTimeline.slice(0, 5).map((entry, i) => (
-                  <div key={i} className="flex justify-between items-center py-1 text-xs" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                    <span className="font-medium truncate" style={{ maxWidth: '100px' }}>{entry.playerName}</span>
-                    <span style={{ color: entry.teamId === 1 ? '#d4af37' : '#22c55e' }} className="font-bold">{entry.teamName.split(' ')[0]}</span>
-                    <span className="text-accent font-bold">{entry.price}Cr</span>
-                    {entry.isSteal && <span style={{ color: '#22c55e', fontSize: '10px' }}>🦅</span>}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Start Control */}
@@ -716,7 +695,7 @@ class ComputerAuction extends Component {
                 fontSize: '1rem',
                 color: highestBidderId === userTeam.id ? '#d4af37' : '#22c55e',
               }}>
-                {highestBidderId === aiTeam.id ? '🤖 ' : '👤 '} BID BY: {highestBidderName.toUpperCase()}
+                {highestBidderId === aiTeam.id ? ' ' : ' '} BID BY: {highestBidderName.toUpperCase()}
               </div>
             )}
 
@@ -758,7 +737,7 @@ class ComputerAuction extends Component {
           </div>
 
           {/* Bid History */}
-          <div className="glass max-h-[200px] p-4 flex flex-col scrollable-panel">
+          <div className="glass max-h-[200px] h-[200px] p-4 flex flex-col scrollable-panel overflow-y-auto">
             <h4 className="mb-3 text-sm tracking-widest text-accent font-bold uppercase border-b pb-2" style={{ borderColor: 'rgba(255,255,255,0.1)' }}>LIVE BID HISTORY</h4>
             <div className="flex-1 overflow-y-auto pr-2">
               {bidHistory.length === 0 ? (
@@ -768,7 +747,7 @@ class ComputerAuction extends Component {
                   <div key={i} className="flex justify-between py-2 text-sm px-2 rounded transition-colors" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                     <span>
                       <span style={{ color: bid.isAI ? '#22c55e' : '#d4af37' }} className="font-bold">
-                        {bid.isAI ? '🤖 ' : '👤 '}{bid.teamName}
+                        {bid.isAI ? ' ' : ' '}{bid.teamName}
                       </span>
                       {' '}bid <span className="font-bold">{bid.amount} Cr</span>
                     </span>
@@ -781,7 +760,7 @@ class ComputerAuction extends Component {
         </div>
 
         {/* Right: Teams + Bought Players Scrollable */}
-        <div className="glass p-6 scrollable-panel mobile-order-3 flex flex-col gap-4" style={{ maxHeight: '85vh', overflowY: 'auto' }}>
+        <div className="glass p-6 scrollable-panel mobile-order-3 flex flex-col gap-4 overflow-y-auto" style={{ height: '100%', maxHeight: '85vh' }}>
           <h3 className="text-center text-accent tracking-widest font-bold text-lg flex items-center justify-center gap-3 sticky top-0 z-10 pb-2" style={{ background: 'inherit', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
             TEAMS PURSE
             {unsoldPlayersPool.length > 0 && (
@@ -789,26 +768,7 @@ class ComputerAuction extends Component {
             )}
           </h3>
 
-          {/* Sold Player Timeline */}
-          {soldTimeline.length > 0 && (
-            <div className="bg-panel rounded-lg p-3" style={{ border: '1px solid rgba(255,255,255,0.07)' }}>
-              <div className="text-xs text-accent font-bold tracking-widest uppercase mb-3">📋 AUCTION TIMELINE</div>
-              <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
-                {soldTimeline.map((entry, i) => (
-                  <div key={i} className="flex justify-between items-center py-1.5 text-xs" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                    <div>
-                      <div className="font-bold text-white">{entry.playerName}</div>
-                      <div className="text-secondary" style={{ fontSize: '10px' }}>{entry.role} • ⭐{entry.rating}</div>
-                    </div>
-                    <div className="text-right">
-                      <div style={{ color: entry.teamId === 1 ? '#d4af37' : '#22c55e', fontWeight: 'bold' }}>{entry.teamName.split(' ')[0]}</div>
-                      <div className="text-accent font-black">{entry.price}Cr {entry.isSteal ? '🦅' : ''}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+
 
           {/* Individual Team Panels */}
           <div className="flex flex-col gap-4">
@@ -819,7 +779,7 @@ class ComputerAuction extends Component {
                 <div key={team.id} className={`bg-panel p-4 rounded-lg border transition-all ${inactive ? 'border-danger border-opacity-30 opacity-60' : ''}`} style={!inactive ? { border: '1px solid rgba(255,255,255,0.05)' } : {}}>
                   <div className="flex justify-between mb-2 items-center">
                     <span className="font-bold text-lg">
-                      {team.name} {team.id === 2 && <span className="text-xs text-success">🤖 AI</span>}
+                      {team.name} {team.id === 2 && <span className="text-xs text-success"> AI</span>}
                       {inactive && <span className="text-xs bg-danger text-white px-2 py-1 rounded ml-2 align-middle">RESTING</span>}
                     </span>
                     <span className="text-accent font-black text-xl">{team.purse.toFixed(1)} <span className="text-sm">Cr</span></span>
@@ -845,6 +805,21 @@ class ComputerAuction extends Component {
             })}
           </div>
         </div>
+
+        {/* Scrolling Broadcast Ticker */}
+        {soldTimeline.length > 0 && (
+          <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: '#050508', padding: '10px 0', borderTop: '2px solid #d4af37', zIndex: 100, boxShadow: '0 -4px 15px rgba(0,0,0,0.5)' }}>
+            <marquee loop="-1" scrollamount="8" style={{ color: 'white', fontWeight: 'bold', fontSize: '1.2rem', textTransform: 'uppercase', letterSpacing: '1px' }}>
+              <div style={{ display: 'flex', gap: '50px' }}>
+                {soldTimeline.map((entry, i) => (
+                  <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                     {entry.playerName} sold to <span style={{ color: entry.teamId === 1 ? '#d4af37' : '#22c55e' }}>{entry.teamName}</span> for <span style={{ color: '#d4af37' }}>{entry.price} Cr</span> {entry.isSteal ? <span style={{ color: '#22c55e' }}>(STEAL)</span> : ''}
+                  </span>
+                ))}
+              </div>
+            </marquee>
+          </div>
+        )}
       </div>
     );
   }
