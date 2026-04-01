@@ -3,13 +3,54 @@ import playersData from '../data/playersData';
 
 const AI_TEAM_NAMES = ['Mumbai Indians', 'Delhi Capitals', 'Kolkata Knight Riders', 'Rajasthan Royals', 'Gujarat Titans', 'Lucknow Super Giants', 'Punjab Kings', 'Sunrisers Hyderabad'];
 
+// ─── Gemini AI Call ───────────────────────────────────────────────────────────
+const GEMINI_API_KEY = 'AIzaSyBybvX6YNxlzM6Br31s2Pi0wsqmnv2ILVw'; // Replace with your real key from aistudio.google.com
+const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+
+async function askGeminiToBid({ playerName, role, rating, stats, currentBid, aiPurse, aiSquadCount, maxBid }) {
+  const prompt = `
+You are an IPL franchise manager AI. Decide whether to bid on this player in an auction.
+
+Player: ${playerName}
+Role: ${role}
+Rating: ${rating}/100
+Stats: ${JSON.stringify(stats)}
+Current Bid: ${currentBid} Cr
+Your Remaining Purse: ${aiPurse} Cr
+Your Squad Size: ${aiSquadCount}/18
+Max you would pay: ${maxBid} Cr
+
+Should you bid? Reply with ONLY a JSON object like:
+{"bid": true, "reason": "brief reason"} or {"bid": false, "reason": "brief reason"}
+`;
+
+  try {
+    const res = await fetch(GEMINI_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.7, maxOutputTokens: 100 }
+      })
+    });
+    const data = await res.json();
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const jsonMatch = text.match(/\{.*\}/s);
+    if (jsonMatch) {
+      return JSON.parse(jsonMatch[0]);
+    }
+    return { bid: false, reason: 'Parse error' };
+  } catch (e) {
+    return null; // fallback to heuristic
+  }
+}
+
 class ComputerAuction extends Component {
   constructor(props) {
     super(props);
 
     const aiTeamName = AI_TEAM_NAMES[Math.floor(Math.random() * AI_TEAM_NAMES.length)];
     
-    // Shuffle and pick 50 players for 1v1
     const shuffled = [...playersData].sort(() => Math.random() - 0.5);
     const pool = shuffled.slice(0, 50); 
 
@@ -19,22 +60,29 @@ class ComputerAuction extends Component {
       players: pool,
       soldPlayerNames: [],
       unsoldPlayerNames: [],
-      unsoldPlayersPool: [], // { name, basePrice, role, rating }
+      unsoldPlayersPool: [],
       currentPlayerIndex: 0,
       currentBid: 0,
       highestBidderId: null,
       highestBidderName: null,
-      status: 'waiting', // waiting, active, finished
+      status: 'waiting',
       timer: 15,
       aiThinking: false,
+      aiThinkingText: '🤖 AI is thinking',
       bidHistory: [],
       bidPopup: null,
       soldCelebration: null,
       unsoldCelebration: null,
       isProcessingSold: false,
-      auctionRound: 'main', // 'main' or 're-auction'
+      auctionRound: 'main',
       reAuctionDone: false,
       effectiveBasePrice: 0,
+      soldTimeline: [], // Global sold player timeline
+      showBoughtPlayers: false,
+      auctionStats: {
+        highestPaidPlayer: null,
+        stealPlayer: null,
+      },
     };
     this.timerInterval = null;
     this.aiTimeout = null;
@@ -45,7 +93,6 @@ class ComputerAuction extends Component {
     clearTimeout(this.aiTimeout);
   }
 
-  // Check if a team can no longer bid (full squad or insufficient purse)
   isTeamInactive = (team, minBidPrice) => {
     const playerCount = team.players ? team.players.length : 0;
     if (playerCount >= 18) return true;
@@ -69,20 +116,20 @@ class ComputerAuction extends Component {
 
     const isReAuction = auctionRound === 're-auction';
 
-    // Check if both teams are inactive
     const minBasePrice = isReAuction
       ? (unsoldPlayersPool.length > 0 ? Math.min(...unsoldPlayersPool.map(p => Math.max(0.5, Math.floor(p.basePrice * 0.5 * 10) / 10))) : 0.5)
       : Math.min(...players.map(p => p.basePrice));
     const userInactive = this.isTeamInactive(userTeam, minBasePrice);
     const aiInactive = this.isTeamInactive(aiTeam, minBasePrice);
     if (userInactive && aiInactive) {
+      this.computeAuctionStats();
       this.setState({ status: 'finished' });
       return;
     }
 
     if (isReAuction) {
-      // RE-AUCTION MODE
       if (unsoldPlayersPool.length === 0) {
+        this.computeAuctionStats();
         this.setState({ status: 'finished', reAuctionDone: true });
         return;
       }
@@ -112,16 +159,15 @@ class ComputerAuction extends Component {
       return;
     }
 
-    // MAIN AUCTION MODE
     const nextIndex = this.getNextPlayerIndex();
     if (nextIndex === -1) {
-      // Main auction exhausted — check for unsold players
       if (unsoldPlayersPool.length > 0 && !reAuctionDone) {
         this.setState({ auctionRound: 're-auction' }, () => {
           this.startNextAuction();
         });
         return;
       }
+      this.computeAuctionStats();
       this.setState({ status: 'finished' });
       return;
     }
@@ -148,13 +194,12 @@ class ComputerAuction extends Component {
     clearInterval(this.timerInterval);
     this.timerInterval = setInterval(() => {
       this.setState(prev => {
-        if (prev.paused) return prev; // Don't tick if paused
+        if (prev.paused) return prev;
 
         const newTimer = prev.timer - 1;
         if (newTimer <= 0) {
           clearInterval(this.timerInterval);
           clearTimeout(this.aiTimeout);
-          // Auto-trigger sold after 2s delay
           if (!prev.isProcessingSold) {
             setTimeout(() => this.handleSold(), 2000);
             return { timer: 0, isProcessingSold: true };
@@ -179,52 +224,81 @@ class ComputerAuction extends Component {
 
   scheduleAiBid = () => {
     clearTimeout(this.aiTimeout);
-    const delay = 2000 + Math.random() * 3000; // 2-5 seconds random delay
+    const delay = 2500 + Math.random() * 3000;
     this.aiTimeout = setTimeout(() => this.aiDecideBid(), delay);
   };
 
-  aiDecideBid = () => {
+  aiDecideBid = async () => {
     const { aiTeam, currentBid, highestBidderId, timer, status, players, currentPlayerIndex } = this.state;
     if (status !== 'active' || timer <= 0) return;
-    if (highestBidderId === aiTeam.id) {
-      // AI already leading, wait
-      return;
-    }
+    if (highestBidderId === aiTeam.id) return;
 
     const player = players[currentPlayerIndex];
     const increment = 1;
     const newBid = highestBidderId ? currentBid + increment : currentBid;
 
-    // AI decision logic
     const aiPlayersCount = aiTeam.players ? aiTeam.players.length : 0;
     if (aiPlayersCount >= 18) return;
     if (aiTeam.purse < newBid) return;
 
-    // Rating-based aggression: higher rated = more likely to bid
-    const bidChance = Math.min(0.95, (player.rating - 60) / 40 + 0.2);
-    // Budget conservation: less likely to bid high
-    const budgetFactor = aiTeam.purse > 30 ? 1 : (aiTeam.purse > 15 ? 0.6 : 0.3);
-    // Price ceiling: won't overpay
     const maxWillingPrice = Math.ceil(player.basePrice * (player.rating / 50));
 
-    if (newBid > maxWillingPrice) return;
-    if (Math.random() > bidChance * budgetFactor) {
-      // AI passes this round, maybe try again
-      if (timer > 3) {
+    this.setState({ aiThinking: true, aiThinkingText: '🤖 AI is thinking' });
+
+    // Try Gemini AI first
+    let shouldBid = null;
+    if (GEMINI_API_KEY && !GEMINI_API_KEY.includes('placeholder')) {
+      this.setState({ aiThinkingText: '🤖 Consulting Gemini AI...' });
+      const decision = await askGeminiToBid({
+        playerName: player.name,
+        role: player.role,
+        rating: player.rating,
+        stats: player.stats,
+        currentBid: newBid,
+        aiPurse: aiTeam.purse,
+        aiSquadCount: aiPlayersCount,
+        maxBid: maxWillingPrice,
+      });
+      if (decision !== null) {
+        shouldBid = decision.bid;
+        if (decision.reason) {
+          this.setState({ aiThinkingText: `🤖 ${decision.reason.substring(0, 40)}...` });
+        }
+      }
+    }
+
+    // Fallback heuristic if Gemini unavailable
+    if (shouldBid === null) {
+      if (newBid > maxWillingPrice) { this.setState({ aiThinking: false }); return; }
+      const bidChance = Math.min(0.95, (player.rating - 60) / 40 + 0.2);
+      const budgetFactor = aiTeam.purse > 30 ? 1 : (aiTeam.purse > 15 ? 0.6 : 0.3);
+      shouldBid = Math.random() <= bidChance * budgetFactor;
+    }
+
+    if (!shouldBid) {
+      this.setState({ aiThinking: false });
+      if (this.state.timer > 3) {
         this.scheduleAiBid();
       }
       return;
     }
 
-    this.setState({ aiThinking: true });
+    if (newBid > maxWillingPrice && shouldBid === null) {
+      this.setState({ aiThinking: false });
+      return;
+    }
+
     setTimeout(() => {
-      // Double-check still active
-      if (this.state.status !== 'active' || this.state.timer <= 0) return;
+      if (this.state.status !== 'active' || this.state.timer <= 0) {
+        this.setState({ aiThinking: false });
+        return;
+      }
 
       const historyEntry = {
         teamName: aiTeam.name,
         amount: newBid,
         time: new Date().toLocaleTimeString(),
+        isAI: true,
       };
 
       this.setState(prev => ({
@@ -234,29 +308,25 @@ class ComputerAuction extends Component {
         aiThinking: false,
         bidHistory: [historyEntry, ...prev.bidHistory],
         bidPopup: { type: 'ai', text: `${aiTeam.name} bids ${newBid} Cr!` },
-        // Extend timer if low
         timer: prev.timer <= 5 ? prev.timer + 5 : prev.timer,
       }));
 
-      // Clear popup
       setTimeout(() => this.setState({ bidPopup: null }), 1500);
 
-      // Maybe bid again later
       if (this.state.timer > 3) {
         this.scheduleAiBid();
       }
-    }, 800);
+    }, 600);
   };
 
   handleUserBid = () => {
     const { userTeam, currentBid, highestBidderId, timer, status, paused } = this.state;
     if (status !== 'active' || timer <= 0 || paused) return;
-    if (highestBidderId === userTeam.id) return; // Already leading
+    if (highestBidderId === userTeam.id) return;
 
     const increment = 1;
     const newBid = highestBidderId ? currentBid + increment : currentBid;
 
-    // Check if team is inactive (purse exhausted or squad full)
     if (this.isTeamInactive(userTeam, newBid)) {
       if (userTeam.players && userTeam.players.length >= 18) {
         alert("Your squad is full (18 players)!");
@@ -270,6 +340,7 @@ class ComputerAuction extends Component {
       teamName: userTeam.name,
       amount: newBid,
       time: new Date().toLocaleTimeString(),
+      isAI: false,
     };
 
     this.setState(prev => ({
@@ -278,19 +349,36 @@ class ComputerAuction extends Component {
       highestBidderName: userTeam.name,
       bidHistory: [historyEntry, ...prev.bidHistory],
       bidPopup: { type: 'user', text: `You bid ${newBid} Cr!` },
-      // Extend timer if low
       timer: prev.timer <= 5 ? prev.timer + 5 : prev.timer,
     }));
 
     setTimeout(() => this.setState({ bidPopup: null }), 1500);
 
-    // AI responds after user bid
     clearTimeout(this.aiTimeout);
     this.scheduleAiBid();
   };
 
+  computeAuctionStats = () => {
+    const { userTeam, aiTeam } = this.state;
+    const allPlayers = [
+      ...(userTeam.players || []).map(p => ({ ...p, teamName: userTeam.name })),
+      ...(aiTeam.players || []).map(p => ({ ...p, teamName: aiTeam.name })),
+    ];
+    if (allPlayers.length === 0) return;
+
+    const highestPaidPlayer = allPlayers.reduce((max, p) => p.soldPrice > (max?.soldPrice || 0) ? p : max, null);
+    // Steal: highest rated player with lowest price/basePrice ratio
+    const stealPlayer = allPlayers.reduce((best, p) => {
+      const ratio = p.soldPrice / (p.basePrice || 1);
+      const bestRatio = best ? best.soldPrice / (best.basePrice || 1) : Infinity;
+      return (p.rating >= 80 && ratio < bestRatio) ? p : best;
+    }, null);
+
+    this.setState({ auctionStats: { highestPaidPlayer, stealPlayer } });
+  };
+
   handleSold = () => {
-    const { highestBidderId, currentBid, players, currentPlayerIndex, soldPlayerNames } = this.state;
+    const { highestBidderId, currentBid, players, currentPlayerIndex, soldPlayerNames, soldTimeline } = this.state;
     const player = players[currentPlayerIndex];
 
     clearInterval(this.timerInterval);
@@ -298,6 +386,18 @@ class ComputerAuction extends Component {
 
     if (highestBidderId) {
       const teamKey = highestBidderId === 1 ? 'userTeam' : 'aiTeam';
+      const isSteal = currentBid <= player.basePrice * 1.1;
+      const newTimelineEntry = {
+        playerName: player.name,
+        role: player.role,
+        rating: player.rating,
+        price: currentBid,
+        teamId: highestBidderId,
+        teamName: highestBidderId === 1 ? this.state.userTeam.name : this.state.aiTeam.name,
+        isSteal,
+        basePrice: player.basePrice,
+      };
+
       this.setState(prev => {
         const team = prev[teamKey];
         return {
@@ -307,6 +407,7 @@ class ComputerAuction extends Component {
             players: [...(team.players || []), { ...player, soldPrice: currentBid }],
           },
           soldPlayerNames: [...prev.soldPlayerNames, player.name],
+          soldTimeline: [newTimelineEntry, ...prev.soldTimeline],
           status: 'waiting',
           soldCelebration: {
             playerName: player.name,
@@ -314,17 +415,16 @@ class ComputerAuction extends Component {
             price: currentBid,
             role: player.role,
             rating: player.rating,
+            isSteal,
           },
         };
       }, () => {
-        // Auto-dismiss celebration after 3 seconds and start next
         setTimeout(() => {
           this.setState({ soldCelebration: null });
           this.startNextAuction();
         }, 3000);
       });
     } else {
-      // UNSOLD — no bids
       const isReAuction = this.state.auctionRound === 're-auction';
 
       this.setState(prev => {
@@ -338,7 +438,6 @@ class ComputerAuction extends Component {
         };
 
         if (!isReAuction) {
-          // During main auction, add to unsold pool for re-auction
           newState.unsoldPlayerNames = [...prev.unsoldPlayerNames, player.name];
           newState.unsoldPlayersPool = [...prev.unsoldPlayersPool, {
             name: player.name,
@@ -347,7 +446,6 @@ class ComputerAuction extends Component {
             rating: player.rating,
           }];
         }
-        // During re-auction, permanently unsold (don't add back)
 
         return newState;
       }, () => {
@@ -363,17 +461,60 @@ class ComputerAuction extends Component {
     const {
       userTeam, aiTeam, players, currentPlayerIndex, currentBid,
       highestBidderId, highestBidderName, status, timer,
-      aiThinking, bidHistory, bidPopup, soldCelebration, unsoldCelebration,
-      auctionRound, unsoldPlayersPool, effectiveBasePrice,
+      aiThinking, aiThinkingText, bidHistory, bidPopup, soldCelebration, unsoldCelebration,
+      auctionRound, unsoldPlayersPool, effectiveBasePrice, soldTimeline,
+      auctionStats,
     } = this.state;
 
     const isReAuction = auctionRound === 're-auction';
 
     if (status === 'finished') {
       const teams = [userTeam, aiTeam];
+      const { highestPaidPlayer, stealPlayer } = auctionStats;
+      const biggestSpender = teams.reduce((max, t) => {
+        const spent = 100 - t.purse;
+        return spent > (100 - (max?.purse || 100)) ? t : max;
+      }, teams[0]);
+
       return (
-        <div className="container text-center animate-fade-in" style={{ paddingTop: '5rem' }}>
-          <h2 className="gradient-text text-5xl mb-8 font-black">Auction Concluded!</h2>
+        <div className="container animate-fade-in" style={{ paddingTop: '2rem', paddingBottom: '4rem' }}>
+          <h2 className="gradient-text text-5xl mb-4 font-black text-center">Auction Concluded!</h2>
+          
+          {/* Auction Highlights */}
+          <div className="glass p-6 mb-8 max-w-3xl mx-auto">
+            <h3 className="text-accent font-black text-xl tracking-widest mb-5 uppercase text-center">🏆 Auction Highlights</h3>
+            <div className="grid grid-cols-1 gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+              {highestPaidPlayer && (
+                <div className="bg-panel p-4 rounded-xl border border-accent border-opacity-40 text-center">
+                  <div className="text-3xl mb-2">💰</div>
+                  <div className="text-xs text-secondary uppercase tracking-widest mb-1 font-bold">Highest Paid</div>
+                  <div className="text-white font-black text-lg">{highestPaidPlayer.name}</div>
+                  <div className="text-accent font-bold text-xl">{highestPaidPlayer.soldPrice} Cr</div>
+                  <div className="text-secondary text-xs mt-1">{highestPaidPlayer.teamName}</div>
+                </div>
+              )}
+              {stealPlayer && (
+                <div className="bg-panel p-4 rounded-xl border border-success border-opacity-40 text-center">
+                  <div className="text-3xl mb-2">🦅</div>
+                  <div className="text-xs text-secondary uppercase tracking-widest mb-1 font-bold">Steal of Auction</div>
+                  <div className="text-white font-black text-lg">{stealPlayer.name}</div>
+                  <div className="text-success font-bold text-xl">{stealPlayer.soldPrice} Cr</div>
+                  <div className="text-secondary text-xs mt-1">Rating {stealPlayer.rating} • Base {stealPlayer.basePrice} Cr</div>
+                </div>
+              )}
+              {biggestSpender && (
+                <div className="bg-panel p-4 rounded-xl border border-primary border-opacity-40 text-center">
+                  <div className="text-3xl mb-2">🔥</div>
+                  <div className="text-xs text-secondary uppercase tracking-widest mb-1 font-bold">Biggest Spender</div>
+                  <div className="text-white font-black text-lg">{biggestSpender.name}</div>
+                  <div className="text-primary font-bold text-xl">{(100 - biggestSpender.purse).toFixed(1)} Cr spent</div>
+                  <div className="text-secondary text-xs mt-1">{biggestSpender.purse.toFixed(1)} Cr remaining</div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Team Summaries */}
           <div className="grid grid-cols-2 gap-8 max-w-lg mx-auto mb-12">
             {teams.map(team => (
               <div key={team.id} className="glass p-6">
@@ -383,9 +524,11 @@ class ComputerAuction extends Component {
               </div>
             ))}
           </div>
-          <button className="btn btn-primary px-10 py-4 text-lg" onClick={() => this.props.setView('results')}>
-            View Final Squads
-          </button>
+          <div className="text-center">
+            <button className="btn btn-primary px-10 py-4 text-lg" onClick={() => this.props.setView('modeSelect')}>
+              Return to Menu
+            </button>
+          </div>
         </div>
       );
     }
@@ -403,6 +546,7 @@ class ComputerAuction extends Component {
             RE-AUCTION ROUND — Unsold Players
           </div>
         )}
+
         {/* Sold Celebration Overlay */}
         {soldCelebration && (
           <div className="sold-overlay" onClick={() => this.setState({ soldCelebration: null })}>
@@ -411,11 +555,16 @@ class ComputerAuction extends Component {
                 <span></span><span></span><span></span><span></span>
                 <span></span><span></span><span></span><span></span>
               </div>
-              <span className="sold-emoji">🎉</span>
-              <div className="sold-title">Congratulations!</div>
+              <span className="sold-emoji">{soldCelebration.isSteal ? '🦅' : '🎉'}</span>
+              <div className="sold-title">{soldCelebration.isSteal ? 'STEAL OF THE AUCTION!' : 'Congratulations!'}</div>
               <div className="sold-player-name">{soldCelebration.playerName}</div>
               <div className="sold-team-name">Sold to {soldCelebration.teamName}</div>
               <div className="sold-price">{soldCelebration.price} Cr</div>
+              {soldCelebration.isSteal && (
+                <div style={{ fontSize: '0.75rem', color: '#22c55e', fontWeight: 'bold', marginBottom: '8px' }}>
+                  🔥 Under Base Price Steal!
+                </div>
+              )}
               <div className="sold-details">
                 <span className="sold-detail-chip">{soldCelebration.role}</span>
                 <span className="sold-detail-chip">⭐ {soldCelebration.rating}</span>
@@ -479,6 +628,22 @@ class ComputerAuction extends Component {
             </div>
           )}
 
+          {/* recently sold timeline mini */}
+          {soldTimeline.length > 0 && (
+            <div className="mt-2">
+              <div className="text-xs text-accent font-bold tracking-widest uppercase mb-2">📋 Last Sold</div>
+              <div style={{ maxHeight: '120px', overflowY: 'auto' }}>
+                {soldTimeline.slice(0, 5).map((entry, i) => (
+                  <div key={i} className="flex justify-between items-center py-1 text-xs" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                    <span className="font-medium truncate" style={{ maxWidth: '100px' }}>{entry.playerName}</span>
+                    <span style={{ color: entry.teamId === 1 ? '#d4af37' : '#22c55e' }} className="font-bold">{entry.teamName.split(' ')[0]}</span>
+                    <span className="text-accent font-bold">{entry.price}Cr</span>
+                    {entry.isSteal && <span style={{ color: '#22c55e', fontSize: '10px' }}>🦅</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Start Control */}
@@ -505,10 +670,9 @@ class ComputerAuction extends Component {
               {status === 'active' ? `${timer}s` : status.toUpperCase()}
             </div>
 
-            {/* AI Thinking indicator */}
             {aiThinking && status === 'active' && (
               <div className="ai-thinking mt-3">
-                🤖 AI is thinking
+                {aiThinkingText}
                 <span className="ai-thinking-dots">
                   <span></span><span></span><span></span>
                 </span>
@@ -533,7 +697,7 @@ class ComputerAuction extends Component {
             )}
           </div>
 
-          {/* Current Bid */}
+          {/* Current Bid + Highest Bidder Display */}
           <div className="glass text-center p-8 flex-1 flex flex-col justify-center relative overflow-hidden">
             <div className="absolute top-0 inset-x-0 h-1 bg-accent opacity-60"></div>
             <div className="text-xl text-secondary mb-4 font-bold tracking-widest">CURRENT BID</div>
@@ -541,8 +705,18 @@ class ComputerAuction extends Component {
               {currentBid || effectiveBasePrice || player.basePrice} <span className="text-3xl text-secondary">Cr</span>
             </div>
             {highestBidderName && (
-              <div className="mt-4 text-success font-bold text-xl tracking-wide bg-success-light inline-block mx-auto px-6 py-2 rounded-full border border-success">
-                BID BY: {highestBidderName}
+              <div style={{
+                marginTop: '12px',
+                background: highestBidderId === userTeam.id ? 'rgba(212,175,55,0.15)' : 'rgba(34,197,94,0.15)',
+                border: `1px solid ${highestBidderId === userTeam.id ? 'rgba(212,175,55,0.5)' : 'rgba(34,197,94,0.5)'}`,
+                borderRadius: '999px',
+                padding: '8px 20px',
+                display: 'inline-block',
+                fontWeight: 'bold',
+                fontSize: '1rem',
+                color: highestBidderId === userTeam.id ? '#d4af37' : '#22c55e',
+              }}>
+                {highestBidderId === aiTeam.id ? '🤖 ' : '👤 '} BID BY: {highestBidderName.toUpperCase()}
               </div>
             )}
 
@@ -565,7 +739,7 @@ class ComputerAuction extends Component {
                         : userInactive
                           ? 'PURSE EXHAUSTED'
                           : isUserLeading
-                            ? `LATEST BID: ${userTeam.name.toUpperCase()}`
+                            ? `✓ LEADING: ${userTeam.name.toUpperCase()}`
                             : `BID ${currentBidPrice} Cr`}
                     </button>
 
@@ -584,7 +758,7 @@ class ComputerAuction extends Component {
           </div>
 
           {/* Bid History */}
-          <div className="glass max-h-[180px] p-4 flex flex-col scrollable-panel">
+          <div className="glass max-h-[200px] p-4 flex flex-col scrollable-panel">
             <h4 className="mb-3 text-sm tracking-widest text-accent font-bold uppercase border-b pb-2" style={{ borderColor: 'rgba(255,255,255,0.1)' }}>LIVE BID HISTORY</h4>
             <div className="flex-1 overflow-y-auto pr-2">
               {bidHistory.length === 0 ? (
@@ -592,7 +766,12 @@ class ComputerAuction extends Component {
               ) : (
                 bidHistory.map((bid, i) => (
                   <div key={i} className="flex justify-between py-2 text-sm px-2 rounded transition-colors" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                    <span><span className="text-accent font-bold">{bid.teamName}</span> placed bid for <span className="font-bold">{bid.amount} Cr</span></span>
+                    <span>
+                      <span style={{ color: bid.isAI ? '#22c55e' : '#d4af37' }} className="font-bold">
+                        {bid.isAI ? '🤖 ' : '👤 '}{bid.teamName}
+                      </span>
+                      {' '}bid <span className="font-bold">{bid.amount} Cr</span>
+                    </span>
                     <span className="text-secondary text-xs mt-1">{bid.time}</span>
                   </div>
                 ))
@@ -601,14 +780,37 @@ class ComputerAuction extends Component {
           </div>
         </div>
 
-        {/* Right: Teams */}
-        <div className="glass p-6 scrollable-panel mobile-order-3">
-          <h3 className="mb-6 text-center text-accent tracking-widest font-bold text-lg flex items-center justify-center gap-3">
+        {/* Right: Teams + Bought Players Scrollable */}
+        <div className="glass p-6 scrollable-panel mobile-order-3 flex flex-col gap-4" style={{ maxHeight: '85vh', overflowY: 'auto' }}>
+          <h3 className="text-center text-accent tracking-widest font-bold text-lg flex items-center justify-center gap-3 sticky top-0 z-10 pb-2" style={{ background: 'inherit', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
             TEAMS PURSE
             {unsoldPlayersPool.length > 0 && (
               <span className="unsold-badge">{unsoldPlayersPool.length} unsold</span>
             )}
           </h3>
+
+          {/* Sold Player Timeline */}
+          {soldTimeline.length > 0 && (
+            <div className="bg-panel rounded-lg p-3" style={{ border: '1px solid rgba(255,255,255,0.07)' }}>
+              <div className="text-xs text-accent font-bold tracking-widest uppercase mb-3">📋 AUCTION TIMELINE</div>
+              <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                {soldTimeline.map((entry, i) => (
+                  <div key={i} className="flex justify-between items-center py-1.5 text-xs" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                    <div>
+                      <div className="font-bold text-white">{entry.playerName}</div>
+                      <div className="text-secondary" style={{ fontSize: '10px' }}>{entry.role} • ⭐{entry.rating}</div>
+                    </div>
+                    <div className="text-right">
+                      <div style={{ color: entry.teamId === 1 ? '#d4af37' : '#22c55e', fontWeight: 'bold' }}>{entry.teamName.split(' ')[0]}</div>
+                      <div className="text-accent font-black">{entry.price}Cr {entry.isSteal ? '🦅' : ''}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Individual Team Panels */}
           <div className="flex flex-col gap-4">
             {teams.map(team => {
               const minBasePrice = Math.min(...players.map(p => p.basePrice));
@@ -626,10 +828,13 @@ class ComputerAuction extends Component {
                     Squad: {team.players ? team.players.length : 0} / 18
                   </div>
                   {team.players && team.players.length > 0 && (
-                    <div className="border-t pt-3 flex flex-col gap-2" style={{ borderColor: 'rgba(255,255,255,0.1)' }}>
+                    <div className="border-t pt-3 flex flex-col gap-1" style={{ borderColor: 'rgba(255,255,255,0.1)', maxHeight: '180px', overflowY: 'auto' }}>
                       {team.players.map((p, i) => (
-                        <div key={i} className="flex justify-between text-xs items-center p-1 rounded">
-                          <span className="font-medium">{p.name}</span>
+                        <div key={i} className="flex justify-between text-xs items-center p-1 rounded hover:bg-white hover:bg-opacity-5">
+                          <div>
+                            <span className="font-medium">{p.name}</span>
+                            <span className="text-secondary ml-2" style={{ fontSize: '10px' }}>{p.role}</span>
+                          </div>
                           <span className="text-accent font-bold bg-dark px-2 py-1 rounded">{p.soldPrice} Cr</span>
                         </div>
                       ))}

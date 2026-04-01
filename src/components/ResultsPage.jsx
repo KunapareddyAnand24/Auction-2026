@@ -91,6 +91,56 @@ class ResultsPage extends Component {
         update(selectionRef, { ...mySelection, ready: true });
     };
 
+    // Dream11-style fantasy points from career stats
+    calcFantasyPoints = (player, isImpact = false) => {
+        const stats = player.stats || {};
+        const role = player.role;
+        let pts = 0;
+        const matches = stats.matches || 1;
+
+        // BATTING
+        if (role !== 'Bowler') {
+            const avgRuns = (stats.runs || 0) / matches;
+            const sr = stats.strikeRate || 100;
+            pts += avgRuns;
+            if (avgRuns >= 100) pts += 16;
+            else if (avgRuns >= 50) pts += 8;
+            if (sr > 170) pts += 6;
+            else if (sr >= 150) pts += 4;
+            else if (sr >= 130) pts += 2;
+            else if (sr < 70) pts -= 6;
+            else if (sr < 100) pts -= 4;
+        }
+
+        // BOWLING
+        if (role === 'Bowler' || role === 'All-rounder') {
+            const avgWickets = (stats.wickets || 0) / matches;
+            const eco = stats.economy || 8;
+            pts += avgWickets * 20;
+            if (avgWickets >= 5) pts += 16;
+            else if (avgWickets >= 4) pts += 8;
+            else if (avgWickets >= 3) pts += 4;
+            if (eco < 5) pts += 6;
+            else if (eco < 6) pts += 4;
+            else if (eco < 7) pts += 2;
+            else if (eco >= 11 && eco < 12) pts -= 4;
+            else if (eco > 12) pts -= 6;
+            else if (eco >= 10) pts -= 2;
+            if (eco < 7) pts += (matches / 5) * 12 / matches;
+        }
+
+        // FIELDING
+        if (role === 'Wicketkeeper') {
+            pts += (matches / 3) * 6 / matches;
+            pts += (matches / 3) * 8 / matches;
+        } else {
+            pts += (matches / 5) * 8 / matches;
+        }
+
+        if (isImpact) pts *= 1.15;
+        return Math.max(0, Math.round(pts * 10) / 10);
+    };
+
     analyzeMatch = () => {
         const { roomData } = this.state;
         if (!roomData || !roomData.teams) return;
@@ -104,10 +154,12 @@ class ResultsPage extends Component {
             let batsmen = 0, bowlers = 0, allrounders = 0, wk = 0;
             let totalSpend = 0, avgStrikeRate = 0, avgEconomy = 0;
             let srCount = 0, ecoCount = 0;
+            let totalFantasyPoints = 0;
 
             xiPlayers.forEach(p => {
                 totalRating += p.rating;
                 totalSpend += (p.soldPrice || p.basePrice);
+                totalFantasyPoints += this.calcFantasyPoints(p, sel.impact.includes(p.id));
 
                 if (p.role === 'Batsman') { batsmen++; battingPower += p.rating; }
                 else if (p.role === 'Bowler') { bowlers++; bowlingPower += p.rating; }
@@ -137,18 +189,16 @@ class ResultsPage extends Component {
             if (allrounders >= 2) balanceScore += 15;
             if (bowlers + allrounders >= 5) balanceScore += 10;
 
-            let strengths = [];
-            let weaknesses = [];
-
-            if (battingPower > 250) strengths.push("Formidable batting lineup");
-            if (bowlingPower > 250) strengths.push("Elite bowling attack");
-            if (allrounders >= 3) strengths.push("Excellent all-round balance");
-            if (wk >= 1) strengths.push("Solid wicket-keeping presence");
-
-            if (battingPower < 200) weaknesses.push("Thin batting order");
-            if (bowlingPower < 200) weaknesses.push("Vulnerable bowling attack");
-            if (allrounders < 2) weaknesses.push("Lack of multi-dimensional players");
-            if (avgEconomy > 8.5) weaknesses.push("Expensive bowling unit");
+            let strengths = [], weaknesses = [];
+            if (battingPower > 250) strengths.push('Formidable batting lineup');
+            if (bowlingPower > 250) strengths.push('Elite bowling attack');
+            if (allrounders >= 3) strengths.push('Excellent all-round balance');
+            if (wk >= 1) strengths.push('Solid wicket-keeping presence');
+            if (totalFantasyPoints > 500) strengths.push('High fantasy point earners');
+            if (battingPower < 200) weaknesses.push('Thin batting order');
+            if (bowlingPower < 200) weaknesses.push('Vulnerable bowling attack');
+            if (allrounders < 2) weaknesses.push('Lack of multi-dimensional players');
+            if (avgEconomy > 8.5) weaknesses.push('Expensive bowling unit');
 
             return {
                 team,
@@ -160,39 +210,45 @@ class ResultsPage extends Component {
                 avgStrikeRate: avgStrikeRate.toFixed(1),
                 avgEconomy: avgEconomy.toFixed(1),
                 totalSpend: totalSpend.toFixed(1),
+                totalFantasyPoints: totalFantasyPoints.toFixed(1),
                 batsmen, bowlers, allrounders, wk,
                 impactPlayer,
                 impactBonus: impactBonus.toFixed(1),
-                overallStrength: (
-                    avgRating * 3 +
-                    battingPower * 0.2 +
-                    bowlingPower * 0.2 +
-                    allRoundDepth * 0.3 +
-                    balanceScore * 1.5 +
-                    avgStrikeRate * 0.3 +
-                    (10 - Math.min(10, avgEconomy)) * 10 +
-                    impactBonus * 5
-                ),
-                strengths,
-                weaknesses
+                overallStrength: totalFantasyPoints, // Fantasy points is the winner metric
+                strengths, weaknesses
             };
         });
 
-        // Determine winner
         const sorted = [...teamScores].sort((a, b) => b.overallStrength - a.overallStrength);
         const winner = sorted[0];
         const totalStrength = teamScores.reduce((s, t) => s + t.overallStrength, 0);
 
+        // Auction Highlights
+        const allBoughtPlayers = roomData.teams.flatMap(t =>
+            (t.players || []).map(p => ({ ...p, teamName: t.name, teamId: t.id }))
+        );
+        const highestPaid = allBoughtPlayers.reduce((max, p) => p.soldPrice > (max?.soldPrice || 0) ? p : max, null);
+        const stealPlayer = allBoughtPlayers.filter(p => p.rating >= 80).reduce((best, p) => {
+            const ratio = p.soldPrice / (p.basePrice || 1);
+            const bestRatio = best ? best.soldPrice / (best.basePrice || 1) : Infinity;
+            return ratio < bestRatio ? p : best;
+        }, null);
+        const teamSpend = roomData.teams.map(t => ({
+            name: t.name, spent: (t.players || []).reduce((s, p) => s + (p.soldPrice || 0), 0)
+        }));
+        const biggestSpender = teamSpend.reduce((max, t) => t.spent > max.spent ? t : max, teamSpend[0] || { name: '', spent: 0 });
+
         this.setState({
             matchPrediction: {
-                teamScores,
-                winner: winner.team,
+                teamScores, winner: winner.team,
                 winChance: totalStrength > 0 ? ((winner.overallStrength / totalStrength) * 100).toFixed(1) : 50,
+                highlights: { highestPaid, stealPlayer, biggestSpender },
             }
         });
 
         this.saveMatchHistory(teamScores, winner.team);
     };
+
 
     saveMatchHistory = async (teamScores, winningTeam) => {
         if (!auth.currentUser) return;
@@ -270,8 +326,8 @@ class ResultsPage extends Component {
                                 { label: 'Balance Score', key: 'balanceScore' },
                                 { label: 'Avg Strike Rate', key: 'avgStrikeRate' },
                                 { label: 'Avg Economy', key: 'avgEconomy' },
-                                { label: 'Impact Bonus', key: 'impactBonus' },
                                 { label: 'Total Spend (Cr)', key: 'totalSpend' },
+                                { label: 'Fantasy Points ⭐', key: 'totalFantasyPoints' },
                             ].map(stat => {
                                 const v1 = parseFloat(matchPrediction.teamScores[0]?.[stat.key] || 0);
                                 const v2 = parseFloat(matchPrediction.teamScores[1]?.[stat.key] || 0);
@@ -321,6 +377,39 @@ class ResultsPage extends Component {
                                     </div>
                                 ))}
                             </div>
+
+                            {/* Auction Highlights */}
+                            {matchPrediction.highlights && (
+                                <div className="mt-8 mb-6 p-4 rounded-xl border border-accent border-opacity-30" style={{ background: 'rgba(212,175,55,0.05)' }}>
+                                    <h3 className="text-accent text-center text-xs font-bold tracking-widest uppercase mb-4">🏆 Auction Highlights</h3>
+                                    <div className="grid grid-cols-3 gap-3 text-center">
+                                        {matchPrediction.highlights.highestPaid && (
+                                            <div>
+                                                <div className="text-2xl mb-1">💰</div>
+                                                <div className="text-[9px] text-secondary uppercase font-bold tracking-wider">Highest Paid</div>
+                                                <div className="text-sm font-black text-white">{matchPrediction.highlights.highestPaid.name}</div>
+                                                <div className="text-xs text-accent">{matchPrediction.highlights.highestPaid.soldPrice} Cr</div>
+                                            </div>
+                                        )}
+                                        {matchPrediction.highlights.stealPlayer && (
+                                            <div>
+                                                <div className="text-2xl mb-1">🦅</div>
+                                                <div className="text-[9px] text-secondary uppercase font-bold tracking-wider">Steal Buy</div>
+                                                <div className="text-sm font-black text-white">{matchPrediction.highlights.stealPlayer.name}</div>
+                                                <div className="text-xs text-success">{matchPrediction.highlights.stealPlayer.soldPrice} Cr</div>
+                                            </div>
+                                        )}
+                                        {matchPrediction.highlights.biggestSpender && (
+                                            <div>
+                                                <div className="text-2xl mb-1">🔥</div>
+                                                <div className="text-[9px] text-secondary uppercase font-bold tracking-wider">Top Spender</div>
+                                                <div className="text-sm font-black text-white">{matchPrediction.highlights.biggestSpender.name}</div>
+                                                <div className="text-xs text-primary">{Math.round(matchPrediction.highlights.biggestSpender.spent)} Cr</div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Winner */}
                             <div className={`prediction-winner ${matchPrediction.winner.id === teams[0]?.id ? 'prediction-winner--team1' : 'prediction-winner--team2'}`}>

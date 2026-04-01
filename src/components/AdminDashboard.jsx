@@ -9,6 +9,7 @@ class AdminDashboard extends Component {
         matchHistory: [],
         usersList: [],
         loading: true,
+        allTimeBid: null,   // { playerName, teamName, price, roomId }
         stats: {
             totalUsers: 0,
             activeRooms: 0,
@@ -38,8 +39,28 @@ class AdminDashboard extends Component {
             const activeRooms = roomsList.filter(r => r.status && r.status !== 'finished').length;
             const ongoingAuctions = roomsList.filter(r => r.status === 'active').length;
 
+            // Compute all-time highest bid across ALL rooms
+            let allTimeBid = null;
+            roomsList.forEach(room => {
+                (room.teams || []).forEach(team => {
+                    (team.players || []).forEach(player => {
+                        if (!allTimeBid || player.soldPrice > allTimeBid.price) {
+                            allTimeBid = {
+                                playerName: player.name,
+                                role: player.role,
+                                rating: player.rating,
+                                teamName: team.name,
+                                price: player.soldPrice,
+                                roomId: room.id,
+                            };
+                        }
+                    });
+                });
+            });
+
             this.setState(prevState => ({
                 rooms: roomsList.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)),
+                allTimeBid,
                 stats: {
                     ...prevState.stats,
                     activeRooms,
@@ -99,7 +120,7 @@ class AdminDashboard extends Component {
     };
 
     render() {
-        const { stats, rooms, matchHistory, usersList, loading } = this.state;
+        const { stats, rooms, matchHistory, usersList, loading, allTimeBid } = this.state;
 
         if (loading) return <div className="container text-center py-20 text-accent font-bold animate-pulse text-2xl tracking-widest uppercase">Fetching Central Data...</div>;
 
@@ -114,7 +135,37 @@ class AdminDashboard extends Component {
                     </button>
                 )}
                 <h1 className="gradient-text text-4xl mb-8 font-black tracking-tight uppercase text-center md:text-left">Creator Dashboard</h1>
-                
+
+                {/* ── All-Time Highest Bid Hall of Fame ── */}
+                {allTimeBid && (
+                    <div className="glass p-6 mb-8" style={{ borderTop: '3px solid #d4af37', background: 'linear-gradient(135deg, rgba(212,175,55,0.08), rgba(0,0,0,0.3))' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+                            <span style={{ fontSize: '2rem' }}>🏆</span>
+                            <div>
+                                <div style={{ fontSize: '0.7rem', letterSpacing: '0.2em', color: '#d4af37', fontWeight: 700, textTransform: 'uppercase' }}>All-Time Record Bid</div>
+                                <div style={{ fontSize: '1.2rem', fontWeight: 900, color: '#fff' }}>Hall of Fame</div>
+                            </div>
+                            <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
+                                <div style={{ fontSize: '2.5rem', fontWeight: 900, color: '#d4af37', lineHeight: 1 }}>{allTimeBid.price} Cr</div>
+                                <div style={{ fontSize: '0.7rem', color: '#888' }}>Highest ever paid</div>
+                            </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+                            <div style={{ background: 'rgba(212,175,55,0.15)', border: '1px solid rgba(212,175,55,0.3)', borderRadius: '12px', padding: '12px 20px' }}>
+                                <div style={{ fontSize: '0.7rem', color: '#888', marginBottom: '2px' }}>Player</div>
+                                <div style={{ fontWeight: 900, fontSize: '1.1rem', color: '#fff' }}>{allTimeBid.playerName}</div>
+                                <div style={{ fontSize: '0.75rem', color: '#aaa' }}>{allTimeBid.role} • ⭐ {allTimeBid.rating}</div>
+                            </div>
+                            <div style={{ fontSize: '1.5rem', color: '#d4af37' }}>→</div>
+                            <div style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: '12px', padding: '12px 20px' }}>
+                                <div style={{ fontSize: '0.7rem', color: '#888', marginBottom: '2px' }}>Bought By</div>
+                                <div style={{ fontWeight: 700, fontSize: '1rem', color: '#22c55e' }}>{allTimeBid.teamName}</div>
+                                <div style={{ fontSize: '0.7rem', color: '#888' }}>Room: {allTimeBid.roomId}</div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
                     <div className="glass p-8 text-center border-t-2 border-accent">
                         <div className="text-4xl font-black text-accent mb-2">{stats.totalUsers}</div>

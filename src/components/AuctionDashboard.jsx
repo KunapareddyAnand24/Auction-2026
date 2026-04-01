@@ -101,8 +101,11 @@ class AuctionDashboard extends Component {
             showUnsoldConfirm: false,
             chatOpen: true,
             showSquadModal: false,
+            soldTimeline: [],   // Global sold player log
+            allTimeBid: null,   // Highest bid ever in this room
         };
         this.timerInterval = null;
+        this.celebrationTimeout = null;
         this.roomRef = db && this.props.roomCode ? ref(db, `rooms/${this.props.roomCode}`) : null;
     }
 
@@ -154,6 +157,46 @@ class AuctionDashboard extends Component {
 
                 const history = data.bidHistory ? Object.values(data.bidHistory).reverse() : [];
                 this.setState({ bidHistory: history });
+
+                // ── Listen to broadcast celebrations (for ALL clients) ──
+                const cel = data.celebration;
+                if (cel) {
+                    if (cel.type === 'sold') {
+                        this.setState({ soldCelebration: cel });
+                        clearTimeout(this.celebrationTimeout);
+                        this.celebrationTimeout = setTimeout(() => {
+                            this.setState({ soldCelebration: null });
+                        }, 3500);
+                    } else if (cel.type === 'unsold') {
+                        this.setState({ unsoldCelebration: cel });
+                        clearTimeout(this.celebrationTimeout);
+                        this.celebrationTimeout = setTimeout(() => {
+                            this.setState({ unsoldCelebration: null });
+                        }, 3000);
+                    }
+                } else {
+                    // Clear when host clears it
+                    if (!cel) {
+                        // only clear if it matches the stale one
+                    }
+                }
+
+                // ── Build sold timeline from team players ──
+                if (data.teams) {
+                    const timeline = [];
+                    let allTimeBid = null;
+                    data.teams.forEach(t => {
+                        (t.players || []).forEach(p => {
+                            const entry = { ...p, teamName: t.name, teamId: t.id };
+                            timeline.push(entry);
+                            if (!allTimeBid || p.soldPrice > allTimeBid.soldPrice) {
+                                allTimeBid = { ...p, teamName: t.name };
+                            }
+                        });
+                    });
+                    // Sort by sold order (approximate by price desc for display)
+                    this.setState({ soldTimeline: timeline.reverse(), allTimeBid });
+                }
             }
         });
     };
@@ -450,6 +493,7 @@ class AuctionDashboard extends Component {
 
         const player = this.props.players[roomData.currentPlayerIndex];
         const bidderId = roomData.highestBidderId;
+        const isSteal = bidderId && roomData.currentBid <= player.basePrice * 1.1;
 
         if (bidderId) {
             const updatedTeams = roomData.teams.map(t => {
@@ -464,53 +508,65 @@ class AuctionDashboard extends Component {
             });
 
             const buyingTeam = roomData.teams.find(t => t.id === bidderId);
-            this.setState({
-                soldCelebration: {
-                    playerName: player.name,
-                    teamName: buyingTeam ? buyingTeam.name : 'Unknown',
-                    price: roomData.currentBid,
-                    role: player.role,
-                    rating: player.rating,
-                }
+            const celebrationData = {
+                type: 'sold',
+                playerName: player.name,
+                teamName: buyingTeam ? buyingTeam.name : 'Unknown',
+                price: roomData.currentBid,
+                role: player.role,
+                rating: player.rating,
+                isSteal: !!isSteal,
+                ts: Date.now(),
+            };
+
+            // Broadcast to ALL clients via Firebase
+            await update(this.roomRef, {
+                teams: updatedTeams,
+                status: 'waiting',
+                celebration: celebrationData,
             });
 
-            await update(this.roomRef, { teams: updatedTeams, status: 'waiting' });
-
-            setTimeout(() => {
-                this.setState({ soldCelebration: null });
+            setTimeout(async () => {
+                // Clear celebration from Firebase after display
+                await update(this.roomRef, { celebration: null });
                 this.startAuctionForPlayer(-1);
-            }, 3000);
+            }, 3500);
         } else {
             const unsoldPlayers = roomData.unsoldPlayers || [];
             const isReAuction = roomData.auctionRound === 're-auction';
 
-            this.setState({
-                unsoldCelebration: {
-                    playerName: player.name,
-                    role: player.role,
-                    rating: player.rating,
-                }
-            });
+            const celebrationData = {
+                type: 'unsold',
+                playerName: player.name,
+                role: player.role,
+                rating: player.rating,
+                ts: Date.now(),
+            };
 
+            // Broadcast to ALL clients
             if (!isReAuction) {
                 const updatedUnsold = [
                     ...unsoldPlayers,
                     { name: player.name, basePrice: player.basePrice, role: player.role, rating: player.rating }
                 ];
-                await update(this.roomRef, { status: 'waiting', unsoldPlayers: updatedUnsold });
+                await update(this.roomRef, {
+                    status: 'waiting',
+                    unsoldPlayers: updatedUnsold,
+                    celebration: celebrationData,
+                });
             } else {
-                await update(this.roomRef, { status: 'waiting' });
+                await update(this.roomRef, { status: 'waiting', celebration: celebrationData });
             }
 
-            setTimeout(() => {
-                this.setState({ unsoldCelebration: null });
+            setTimeout(async () => {
+                await update(this.roomRef, { celebration: null });
                 this.startAuctionForPlayer(-1);
-            }, 2500);
+            }, 3000);
         }
     };
 
     render() {
-        const { roomData, localTimer, bidHistory, soldCelebration, unsoldCelebration, setCelebration, chatOpen } = this.state;
+        const { roomData, localTimer, bidHistory, soldCelebration, unsoldCelebration, setCelebration, chatOpen, soldTimeline } = this.state;
         if (!roomData) return <div className="container text-center text-secondary">Loading Room Data...</div>;
 
         const players = this.props.players;
@@ -581,7 +637,7 @@ class AuctionDashboard extends Component {
                     </div>
                 )}
 
-                {/* ── Sold Overlay ── */}
+                {/* ── Sold Overlay (broadcast to ALL) ── */}
                 {soldCelebration && (
                     <div className="sold-overlay" onClick={() => this.setState({ soldCelebration: null })}>
                         <div className="sold-card">
@@ -589,11 +645,14 @@ class AuctionDashboard extends Component {
                                 <span></span><span></span><span></span><span></span>
                                 <span></span><span></span><span></span><span></span>
                             </div>
-                            <span className="sold-emoji">🎉</span>
-                            <div className="sold-title">Congratulations!</div>
+                            <span className="sold-emoji">{soldCelebration.isSteal ? '🦅' : '🎉'}</span>
+                            <div className="sold-title">{soldCelebration.isSteal ? 'STEAL OF THE AUCTION!' : 'Congratulations!'}</div>
                             <div className="sold-player-name">{soldCelebration.playerName}</div>
                             <div className="sold-team-name">Sold to {soldCelebration.teamName}</div>
                             <div className="sold-price">{soldCelebration.price} Cr</div>
+                            {soldCelebration.isSteal && (
+                                <div style={{ fontSize: '0.75rem', color: '#22c55e', fontWeight: 'bold', marginBottom: '8px' }}>🔥 Under Base Price Steal!</div>
+                            )}
                             <div className="sold-details">
                                 <span className="sold-detail-chip">{soldCelebration.role}</span>
                                 <span className="sold-detail-chip">⭐ {soldCelebration.rating}</span>
@@ -842,11 +901,28 @@ class AuctionDashboard extends Component {
                             <div className="text-6xl font-black mb-2 flex items-center justify-center gap-2">
                                 {roomData.currentBid || effectiveBasePrice} <span className="text-3xl text-secondary">Cr</span>
                             </div>
-                            {roomData.highestBidderName && (
-                                <div className="mt-4 text-success font-bold text-xl tracking-wide bg-success-light inline-block mx-auto px-6 py-2 rounded-full border border-success border-opacity-30">
-                                    BID BY: {roomData.highestBidderName}
-                                </div>
-                            )}
+                            {roomData.highestBidderName && (() => {
+                                const myTeam = (roomData.teams || []).find(t => t.id === this.props.myTeamId);
+                                const isMe = myTeam && roomData.highestBidderId === myTeam.id;
+                                const currentBidVal = roomData.currentBid || player.basePrice;
+                                const isStealNow = currentBidVal <= player.basePrice * 1.1;
+                                return (
+                                    <div style={{
+                                        marginTop: '12px',
+                                        background: isMe ? 'rgba(212,175,55,0.15)' : 'rgba(34,197,94,0.15)',
+                                        border: `1px solid ${isMe ? 'rgba(212,175,55,0.5)' : 'rgba(34,197,94,0.5)'}`,
+                                        borderRadius: '999px',
+                                        padding: '8px 20px',
+                                        display: 'inline-block',
+                                        fontWeight: 'bold',
+                                        fontSize: '1rem',
+                                        color: isMe ? '#d4af37' : '#22c55e',
+                                    }}>
+                                        {isMe ? '👤 ' : '🏆 '} BID BY: {roomData.highestBidderName.toUpperCase()}
+                                        {isStealNow && roomData.highestBidderId && <span style={{ marginLeft: '8px', color: '#22c55e', fontSize: '0.75rem' }}>🦅 STEAL PRICE!</span>}
+                                    </div>
+                                );
+                            })()}
 
                             {/* Action Buttons */}
                             <div className="mt-6 flex flex-col gap-3 items-center">
@@ -932,31 +1008,72 @@ class AuctionDashboard extends Component {
                         </div>
 
                         {/* Bid History */}
-                        <div className="glass h-full max-h-[160px] p-4 flex flex-col scrollable-panel">
+                        <div className="glass h-full max-h-[180px] p-4 flex flex-col scrollable-panel">
                             <h4 className="mb-3 text-sm tracking-widest text-accent font-bold uppercase border-b border-white border-opacity-10 pb-2">LIVE BID HISTORY</h4>
                             <div className="flex-1 overflow-y-auto pr-2">
                                 {bidHistory.length === 0 ? (
                                     <div className="text-secondary text-center mt-4 italic text-sm">Awaiting first bid...</div>
                                 ) : (
-                                    bidHistory.map((bid, i) => (
-                                        <div key={i} className="flex justify-between py-2 text-sm border-b border-white border-opacity-5 last:border-0 hover:bg-white hover:bg-opacity-5 px-2 rounded transition-colors">
-                                            <span><span className="text-accent font-bold">{bid.teamName}</span> bid <span className="font-bold">{bid.amount} Cr</span></span>
-                                            <span className="text-secondary text-xs">{bid.time}</span>
-                                        </div>
-                                    ))
+                                    bidHistory.map((bid, i) => {
+                                        const myTeam = (roomData.teams || []).find(t => t.id === this.props.myTeamId);
+                                        const isMe = myTeam && bid.teamName === myTeam.name;
+                                        return (
+                                            <div key={i} className="flex justify-between py-2 text-sm border-b border-white border-opacity-5 last:border-0 hover:bg-white hover:bg-opacity-5 px-2 rounded transition-colors">
+                                                <span>
+                                                    <span style={{ color: isMe ? '#d4af37' : '#22c55e' }} className="font-bold">
+                                                        {isMe ? '👤 ' : '🏆 '}{bid.teamName}
+                                                    </span>
+                                                    {' '}bid <span className="font-bold">{bid.amount} Cr</span>
+                                                </span>
+                                                <span className="text-secondary text-xs">{bid.time}</span>
+                                            </div>
+                                        );
+                                    })
                                 )}
                             </div>
                         </div>
                     </div>
 
-                    {/* RIGHT: Teams Purse */}
-                    <div className="glass p-6 scrollable-panel mobile-order-3">
-                        <h3 className="mb-6 text-center text-accent tracking-widest font-bold text-lg flex items-center justify-center gap-3">
-                            TEAMS PURSE
+                    {/* RIGHT: Teams Purse + Sold Timeline */}
+                    <div className="glass p-6 mobile-order-3 flex flex-col gap-4" style={{ maxHeight: '88vh', overflowY: 'auto' }}>
+                        <h3 className="text-center text-accent tracking-widest font-bold text-lg flex items-center justify-center gap-3 sticky top-0 pb-2 z-10" style={{ background: 'rgba(10,15,28,0.95)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                            TEAMS
                             {unsoldPlayers.length > 0 && (
                                 <span className="unsold-badge">{unsoldPlayers.length} unsold</span>
                             )}
                         </h3>
+
+                        {/* Auction Timeline */}
+                        {soldTimeline.length > 0 && (
+                            <div className="bg-panel rounded-lg p-3" style={{ border: '1px solid rgba(255,255,255,0.07)' }}>
+                                <div className="text-xs text-accent font-bold tracking-widest uppercase mb-2">📋 SOLD TIMELINE</div>
+                                <div style={{ maxHeight: '180px', overflowY: 'auto' }}>
+                                    {soldTimeline.map((entry, i) => {
+                                        const entryTeam = teams.find(t => t.name === entry.teamName);
+                                        const isMyTeam = entryTeam && entryTeam.id === this.props.myTeamId;
+                                        const isStealEntry = entry.soldPrice <= entry.basePrice * 1.1;
+                                        return (
+                                            <div key={i} className="flex justify-between items-center py-1.5 text-xs" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                                                <div>
+                                                    <div className="font-bold text-white" style={{ fontSize: '11px' }}>{entry.name || entry.playerName}</div>
+                                                    <div style={{ color: '#888', fontSize: '10px' }}>{entry.role}</div>
+                                                </div>
+                                                <div className="text-right">
+                                                    <div style={{ color: isMyTeam ? '#d4af37' : '#22c55e', fontWeight: 'bold', fontSize: '10px' }}>
+                                                        {entry.teamName?.split(' ')[0]}
+                                                    </div>
+                                                    <div className="text-accent font-black" style={{ fontSize: '11px' }}>
+                                                        {entry.soldPrice}Cr {isStealEntry ? '🦅' : ''}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Team Panels fully scrollable */}
                         <div className="flex flex-col gap-4">
                             {teams.map(team => {
                                 const minBasePrice = Math.min(...this.props.players.map(p => p.basePrice));
@@ -975,16 +1092,16 @@ class AuctionDashboard extends Component {
                                             Squad: {team.players ? team.players.length : 0} / 18
                                         </div>
                                         {team.players && team.players.length > 0 && (
-                                            <div className="border-t border-white border-opacity-10 pt-3 flex flex-col gap-1">
-                                                {team.players.slice(-4).map((p, i) => (
-                                                    <div key={i} className="flex justify-between text-xs items-center">
-                                                        <span className="font-medium">{p.name}</span>
+                                            <div className="border-t border-white border-opacity-10 pt-3 flex flex-col gap-1" style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                                                {team.players.map((p, i) => (
+                                                    <div key={i} className="flex justify-between text-xs items-center py-1 rounded hover:bg-white hover:bg-opacity-5 px-1">
+                                                        <div>
+                                                            <span className="font-medium">{p.name}</span>
+                                                            <span className="text-secondary ml-1" style={{ fontSize: '10px' }}>{p.role?.substring(0, 2)}</span>
+                                                        </div>
                                                         <span className="text-accent font-bold">{p.soldPrice} Cr</span>
                                                     </div>
                                                 ))}
-                                                {team.players.length > 4 && (
-                                                    <div className="text-secondary text-xs text-center mt-1">+{team.players.length - 4} more</div>
-                                                )}
                                             </div>
                                         )}
                                     </div>
