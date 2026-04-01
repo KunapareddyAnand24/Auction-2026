@@ -11,7 +11,7 @@ import UserProfile from './components/UserProfile';
 import GameRules from './components/GameRules';
 import AdminDashboard from './components/AdminDashboard';
 import { ref, onValue, get } from 'firebase/database';
-import { db, auth } from './firebase';
+import { db, auth, firestore } from './firebase';
 import emailjs from '@emailjs/browser';
 import {
   onAuthStateChanged,
@@ -21,7 +21,6 @@ import {
   signOut,
   signInWithPopup,
   GoogleAuthProvider,
-  signInAnonymously,
 } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 
@@ -215,17 +214,6 @@ class LoginPage extends Component {
     }
   };
 
-  handleGuestPlay = async () => {
-    this.setState({ error: '', loading: true });
-    try {
-      const userCredential = await signInAnonymously(auth);
-      await updateProfile(userCredential.user, { displayName: 'Guest Manager' });
-    } catch (err) {
-      this.setState({ error: err.message });
-    } finally {
-      this.setState({ loading: false });
-    }
-  };
 
   render() {
     const { isLogin, email, password, username, error, loading, signupSuccess, otpSent, userOtpInput, resendTimer, canResend } = this.state;
@@ -373,10 +361,7 @@ class LoginPage extends Component {
             Sign in with Google
           </button>
 
-          {/* Guest Play */}
-          <button className="btn-guest" onClick={this.handleGuestPlay} disabled={loading}>
-            👤 Play as Guest
-          </button>
+
         </div>
       </div>
     );
