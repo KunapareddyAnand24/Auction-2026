@@ -661,6 +661,8 @@ class App extends Component {
           <ComputerAuction
             userName={this.state.user}
             setView={this.setView}
+            setTeams={this.setTeams}
+            setMyTeamId={this.setMyTeamId}
           />
         );
       case 'quickAuction':
@@ -668,6 +670,8 @@ class App extends Component {
           <ComputerAuction
             userName={this.state.user}
             setView={this.setView}
+            setTeams={this.setTeams}
+            setMyTeamId={this.setMyTeamId}
           />
         );
       case 'profile':
