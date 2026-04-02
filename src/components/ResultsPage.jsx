@@ -1,7 +1,50 @@
-﻿import React, { Component } from 'react';
+import React, { Component } from 'react';
 import { ref, onValue, update } from 'firebase/database';
 import { db, firestore, auth } from '../firebase';
-import { collection, addDoc } from 'firebase/firestore';
+import { collection, addDoc, doc, setDoc, getDoc } from 'firebase/firestore';
+
+const FANTASY_RULES = {
+    BATTING: {
+        RUN: 1,
+        BOUNDARY: 1,
+        SIX: 2,
+        FIFTY: 8,
+        CENTURY: 16,
+        SR_BONUS: {
+            gt170: 6,
+            "150to170": 4,
+            "130to150": 2,
+            lt50: -6,
+            "50to60": -4,
+            "60to70": -2
+        }
+    },
+    BOWLING: {
+        WICKET: 20,
+        MAIDEN: 12,
+        DOT: 1,
+        WIDE_NOBALL: -2,
+        BONUS: {
+            "3w": 4,
+            "4w": 8,
+            "5w": 16
+        },
+        ECONOMY: {
+            lt5: 6,
+            "5to6": 4,
+            "6to7": 2,
+            "10to11": -2,
+            "11to12": -4,
+            gt12: -6
+        }
+    },
+    FIELDING: {
+        CATCH: 8,
+        CATCH_3_BONUS: 4,
+        STUMPING: 6,
+        RUNOUT: 6
+    }
+};
 
 class ResultsPage extends Component {
     state = {
@@ -9,6 +52,7 @@ class ResultsPage extends Component {
         selectionMode: 'xi',
         roomData: null,
         matchPrediction: null,
+        simulating: false,
     };
 
     componentDidMount() {
@@ -91,162 +135,184 @@ class ResultsPage extends Component {
         update(selectionRef, { ...mySelection, ready: true });
     };
 
-    // Dream11-style fantasy points from career stats
-    calcFantasyPoints = (player, isImpact = false) => {
-        const stats = player.stats || {};
+    // Realistic Match Simulation based on RTG
+    simulatePerformance = (player) => {
+        const rtg = player.rating;
         const role = player.role;
+        
+        let perf = {
+            runs: 0, balls: 0, fours: 0, sixes: 0,
+            wickets: 0, overs: 0, maidens: 0, dots: 0, wides: 0, noballs: 0, economy: 0,
+            catches: 0, stumpings: 0, runouts: 0
+        };
+
+        // BATTING SIMULATION
+        if (role !== 'Bowler' || Math.random() > 0.5) {
+            const potential = (rtg / 100) * 60; // Max 60 runs typical base
+            perf.runs = Math.floor(Math.random() * potential * (Math.random() > 0.8 ? 2.5 : 1.5));
+            perf.balls = Math.max(1, Math.floor(perf.runs / (0.8 + Math.random())));
+            perf.fours = Math.floor(perf.runs * 0.1);
+            perf.sixes = Math.floor(perf.runs * 0.05);
+            if (perf.runs > 100) { perf.runs = 100 + Math.floor(Math.random() * 30); } // Cap century logic
+        }
+
+        // BOWLING SIMULATION
+        if (role === 'Bowler' || role === 'All-rounder') {
+            perf.overs = role === 'Bowler' ? 4 : (Math.random() > 0.5 ? 4 : 2);
+            const wktChance = (rtg / 100) * 0.4; // Up to 0.4 wkts per over
+            for(let i=0; i<perf.overs; i++) {
+                if(Math.random() < wktChance) perf.wickets++;
+                if(Math.random() > 0.9) perf.maidens++;
+            }
+            perf.economy = 5 + (100 - rtg)/10 + (Math.random() * 4 - 2);
+            perf.dots = Math.floor(perf.overs * 6 * 0.4);
+            perf.wides = Math.floor(Math.random() * 3);
+            perf.noballs = Math.random() > 0.8 ? 1 : 0;
+        }
+
+        // FIELDING SIMULATION
+        perf.catches = Math.random() > 0.7 ? (Math.random() > 0.9 ? 2 : 1) : 0;
+        if (role === 'Wicketkeeper') {
+            perf.stumpings = Math.random() > 0.8 ? 1 : 0;
+            perf.catches += Math.random() > 0.5 ? 1 : 0;
+        }
+        perf.runouts = Math.random() > 0.9 ? 1 : 0;
+
+        return perf;
+    };
+
+    // New Fantasy Points Calc based on simulated Performance
+    calcFantasyPoints = (perf, role) => {
         let pts = 0;
-        const matches = stats.matches || 1;
 
         // BATTING
-        if (role !== 'Bowler') {
-            const avgRuns = (stats.runs || 0) / matches;
-            const sr = stats.strikeRate || 100;
-            pts += avgRuns;
-            if (avgRuns >= 100) pts += 16;
-            else if (avgRuns >= 50) pts += 8;
-            if (sr > 170) pts += 6;
-            else if (sr >= 150) pts += 4;
-            else if (sr >= 130) pts += 2;
-            else if (sr < 70) pts -= 6;
-            else if (sr < 100) pts -= 4;
+        pts += perf.runs * FANTASY_RULES.BATTING.RUN;
+        pts += perf.fours * FANTASY_RULES.BATTING.BOUNDARY;
+        pts += perf.sixes * FANTASY_RULES.BATTING.SIX;
+        if (perf.runs >= 100) pts += FANTASY_RULES.BATTING.CENTURY;
+        else if (perf.runs >= 50) pts += FANTASY_RULES.BATTING.FIFTY;
+
+        const sr = perf.balls > 0 ? (perf.runs / perf.balls) * 100 : 0;
+        if (perf.balls >= 10) {
+            if (sr > 170) pts += FANTASY_RULES.BATTING.SR_BONUS.gt170;
+            else if (sr > 150) pts += FANTASY_RULES.BATTING.SR_BONUS["150to170"];
+            else if (sr > 130) pts += FANTASY_RULES.BATTING.SR_BONUS["130to150"];
+            else if (sr < 50) pts += FANTASY_RULES.BATTING.SR_BONUS.lt50;
+            else if (sr < 60) pts += FANTASY_RULES.BATTING.SR_BONUS["50to60"];
+            else if (sr < 70) pts += FANTASY_RULES.BATTING.SR_BONUS["60to70"];
         }
 
         // BOWLING
-        if (role === 'Bowler' || role === 'All-rounder') {
-            const avgWickets = (stats.wickets || 0) / matches;
-            const eco = stats.economy || 8;
-            pts += avgWickets * 20;
-            if (avgWickets >= 5) pts += 16;
-            else if (avgWickets >= 4) pts += 8;
-            else if (avgWickets >= 3) pts += 4;
-            if (eco < 5) pts += 6;
-            else if (eco < 6) pts += 4;
-            else if (eco < 7) pts += 2;
-            else if (eco >= 11 && eco < 12) pts -= 4;
-            else if (eco > 12) pts -= 6;
-            else if (eco >= 10) pts -= 2;
-            if (eco < 7) pts += (matches / 5) * 12 / matches;
+        pts += perf.wickets * FANTASY_RULES.BOWLING.WICKET;
+        pts += perf.maidens * FANTASY_RULES.BOWLING.MAIDEN;
+        pts += perf.dots * FANTASY_RULES.BOWLING.DOT;
+        pts += (perf.wides + perf.noballs) * FANTASY_RULES.BOWLING.WIDE_NOBALL;
+
+        if (perf.wickets >= 5) pts += FANTASY_RULES.BOWLING.BONUS["5w"];
+        else if (perf.wickets === 4) pts += FANTASY_RULES.BOWLING.BONUS["4w"];
+        else if (perf.wickets === 3) pts += FANTASY_RULES.BOWLING.BONUS["3w"];
+
+        const eco = perf.economy;
+        if (perf.overs >= 2) {
+            if (eco < 5) pts += FANTASY_RULES.BOWLING.ECONOMY.lt5;
+            else if (eco < 6) pts += FANTASY_RULES.BOWLING.ECONOMY["5to6"];
+            else if (eco < 7) pts += FANTASY_RULES.BOWLING.ECONOMY["6to7"];
+            else if (eco > 12) pts += FANTASY_RULES.BOWLING.ECONOMY.gt12;
+            else if (eco > 11) pts += FANTASY_RULES.BOWLING.ECONOMY["11to12"];
+            else if (eco > 10) pts += FANTASY_RULES.BOWLING.ECONOMY["10to11"];
         }
 
         // FIELDING
-        if (role === 'Wicketkeeper') {
-            pts += (matches / 3) * 6 / matches;
-            pts += (matches / 3) * 8 / matches;
-        } else {
-            pts += (matches / 5) * 8 / matches;
-        }
+        pts += perf.catches * FANTASY_RULES.FIELDING.CATCH;
+        if (perf.catches >= 3) pts += FANTASY_RULES.FIELDING.CATCH_3_BONUS;
+        pts += perf.stumpings * FANTASY_RULES.FIELDING.STUMPING;
+        pts += perf.runouts * FANTASY_RULES.FIELDING.RUNOUT;
 
-        if (isImpact) pts *= 1.15;
-        return Math.max(0, Math.round(pts * 10) / 10);
+        return Math.round(pts * 10) / 10;
     };
 
     analyzeMatch = () => {
         const { roomData } = this.state;
         if (!roomData || !roomData.teams) return;
 
-        const teamScores = roomData.teams.map(team => {
-            const sel = roomData.selections?.[team.id] || { xi: [], impact: [] };
-            const xiPlayers = (team.players || []).filter(p => sel.xi.includes(p.id));
-            const impactPlayer = (team.players || []).find(p => sel.impact.includes(p.id));
-            
-            let totalRating = 0, battingPower = 0, bowlingPower = 0, allRoundDepth = 0;
-            let batsmen = 0, bowlers = 0, allrounders = 0, wk = 0;
-            let totalSpend = 0, avgStrikeRate = 0, avgEconomy = 0;
-            let srCount = 0, ecoCount = 0;
-            let totalFantasyPoints = 0;
+        this.setState({ simulating: true });
 
-            xiPlayers.forEach(p => {
-                totalRating += p.rating;
-                totalSpend += (p.soldPrice || p.basePrice);
-                totalFantasyPoints += this.calcFantasyPoints(p, sel.impact.includes(p.id));
+        // Simulate Match Progress
+        setTimeout(() => {
+            const teamScores = roomData.teams.map(team => {
+                const sel = roomData.selections?.[team.id] || { xi: [], impact: [] };
+                const xiPlayers = (team.players || []).filter(p => sel.xi.includes(p.id));
+                const impactPlayer = (team.players || []).find(p => sel.impact.includes(p.id));
+                
+                let totalFantasyPoints = 0;
+                let batsmen = 0, bowlers = 0, allrounders = 0, wk = 0;
+                let battingPower = 0, bowlingPower = 0;
+                let playerPerformances = [];
 
-                if (p.role === 'Batsman') { batsmen++; battingPower += p.rating; }
-                else if (p.role === 'Bowler') { bowlers++; bowlingPower += p.rating; }
-                else if (p.role === 'All-rounder') { allrounders++; allRoundDepth += p.rating; battingPower += p.rating * 0.5; bowlingPower += p.rating * 0.5; }
-                else if (p.role === 'Wicketkeeper') { wk++; battingPower += p.rating; }
+                xiPlayers.forEach(p => {
+                    const isImpact = impactPlayer && p.id === impactPlayer.id;
+                    const perf = this.simulatePerformance(p);
+                    let pts = this.calcFantasyPoints(perf, p.role);
+                    if (isImpact) pts *= 1.5; // Huge bonus for being the Impact choice
 
-                if (p.stats) {
-                    if (p.stats.strikeRate && p.role !== 'Bowler') { avgStrikeRate += p.stats.strikeRate; srCount++; }
-                    if (p.stats.economy && p.role !== 'Batsman' && p.role !== 'Wicketkeeper') { avgEconomy += p.stats.economy; ecoCount++; }
+                    totalFantasyPoints += pts;
+                    playerPerformances.push({ ...p, matchPoints: pts, perf });
+
+                    if (p.role === 'Batsman') { batsmen++; battingPower += p.rating; }
+                    else if (p.role === 'Bowler') { bowlers++; bowlingPower += p.rating; }
+                    else if (p.role === 'All-rounder') { allrounders++; battingPower += p.rating * 0.5; bowlingPower += p.rating * 0.5; }
+                    else if (p.role === 'Wicketkeeper') { wk++; battingPower += p.rating; }
+                });
+
+                let strengths = [], weaknesses = [];
+                if (battingPower > 250) strengths.push('Elite Batting Aggression');
+                if (bowlingPower > 250) strengths.push('Clinical Bowling Attack');
+                if (allrounders >= 3) strengths.push('Unmatchable Versatility');
+                if (totalFantasyPoints > 400) strengths.push('Phenomenal Match Synergy');
+                if (battingPower < 200) weaknesses.push('Struggling Batting Depth');
+                if (bowlingPower < 200) weaknesses.push('Leaky Bowling Options');
+
+                return {
+                    team,
+                    totalFantasyPoints: Math.round(totalFantasyPoints),
+                    batsmen, bowlers, allrounders, wk,
+                    impactPlayer,
+                    playerPerformances,
+                    strengths, weaknesses
+                };
+            });
+
+            const sorted = [...teamScores].sort((a, b) => b.totalFantasyPoints - a.totalFantasyPoints);
+            const winner = sorted[0];
+            const mvp = teamScores.flatMap(ts => ts.playerPerformances).reduce((max, p) => p.matchPoints > (max?.matchPoints || 0) ? p : max, null);
+
+            // Auction Highlights
+            const allBoughtPlayers = roomData.teams.flatMap(t =>
+                (t.players || []).map(p => ({ ...p, teamName: t.name, teamId: t.id }))
+            );
+            const highestPaid = allBoughtPlayers.reduce((max, p) => p.soldPrice > (max?.soldPrice || 0) ? p : max, null);
+            const stealPlayer = allBoughtPlayers.filter(p => p.rating >= 80).reduce((best, p) => {
+                const ratio = p.soldPrice / (p.basePrice || 1);
+                const bestRatio = best ? best.soldPrice / (best.basePrice || 1) : Infinity;
+                return ratio < bestRatio ? p : best;
+            }, null);
+            const teamSpend = roomData.teams.map(t => ({
+                name: t.name, spent: (t.players || []).reduce((s, p) => s + (p.soldPrice || 0), 0)
+            }));
+            const biggestSpender = teamSpend.reduce((max, t) => t.spent > max.spent ? t : max, teamSpend[0] || { name: '', spent: 0 });
+
+            this.setState({
+                simulating: false,
+                matchPrediction: {
+                    teamScores, 
+                    winner: winner.team,
+                    mvp,
+                    highlights: { highestPaid, stealPlayer, biggestSpender },
                 }
             });
 
-            let impactBonus = 0;
-            if (impactPlayer) {
-                impactBonus = impactPlayer.rating * 0.15;
-                totalRating += impactBonus;
-            }
-
-            const avgRating = xiPlayers.length > 0 ? totalRating / xiPlayers.length : 0;
-            avgStrikeRate = srCount > 0 ? avgStrikeRate / srCount : 0;
-            avgEconomy = ecoCount > 0 ? avgEconomy / ecoCount : 99;
-
-            let balanceScore = 0;
-            if (wk >= 1) balanceScore += 10;
-            if (batsmen >= 3 && batsmen <= 5) balanceScore += 15;
-            if (bowlers >= 3 && bowlers <= 5) balanceScore += 15;
-            if (allrounders >= 2) balanceScore += 15;
-            if (bowlers + allrounders >= 5) balanceScore += 10;
-
-            let strengths = [], weaknesses = [];
-            if (battingPower > 250) strengths.push('Formidable batting lineup');
-            if (bowlingPower > 250) strengths.push('Elite bowling attack');
-            if (allrounders >= 3) strengths.push('Excellent all-round balance');
-            if (wk >= 1) strengths.push('Solid wicket-keeping presence');
-            if (totalFantasyPoints > 500) strengths.push('High fantasy point earners');
-            if (battingPower < 200) weaknesses.push('Thin batting order');
-            if (bowlingPower < 200) weaknesses.push('Vulnerable bowling attack');
-            if (allrounders < 2) weaknesses.push('Lack of multi-dimensional players');
-            if (avgEconomy > 8.5) weaknesses.push('Expensive bowling unit');
-
-            return {
-                team,
-                avgRating: avgRating.toFixed(1),
-                battingPower: battingPower.toFixed(0),
-                bowlingPower: bowlingPower.toFixed(0),
-                allRoundDepth: allRoundDepth.toFixed(0),
-                balanceScore,
-                avgStrikeRate: avgStrikeRate.toFixed(1),
-                avgEconomy: avgEconomy.toFixed(1),
-                totalSpend: totalSpend.toFixed(1),
-                totalFantasyPoints: totalFantasyPoints.toFixed(1),
-                batsmen, bowlers, allrounders, wk,
-                impactPlayer,
-                impactBonus: impactBonus.toFixed(1),
-                overallStrength: totalFantasyPoints, // Fantasy points is the winner metric
-                strengths, weaknesses
-            };
-        });
-
-        const sorted = [...teamScores].sort((a, b) => b.overallStrength - a.overallStrength);
-        const winner = sorted[0];
-        const totalStrength = teamScores.reduce((s, t) => s + t.overallStrength, 0);
-
-        // Auction Highlights
-        const allBoughtPlayers = roomData.teams.flatMap(t =>
-            (t.players || []).map(p => ({ ...p, teamName: t.name, teamId: t.id }))
-        );
-        const highestPaid = allBoughtPlayers.reduce((max, p) => p.soldPrice > (max?.soldPrice || 0) ? p : max, null);
-        const stealPlayer = allBoughtPlayers.filter(p => p.rating >= 80).reduce((best, p) => {
-            const ratio = p.soldPrice / (p.basePrice || 1);
-            const bestRatio = best ? best.soldPrice / (best.basePrice || 1) : Infinity;
-            return ratio < bestRatio ? p : best;
-        }, null);
-        const teamSpend = roomData.teams.map(t => ({
-            name: t.name, spent: (t.players || []).reduce((s, p) => s + (p.soldPrice || 0), 0)
-        }));
-        const biggestSpender = teamSpend.reduce((max, t) => t.spent > max.spent ? t : max, teamSpend[0] || { name: '', spent: 0 });
-
-        this.setState({
-            matchPrediction: {
-                teamScores, winner: winner.team,
-                winChance: totalStrength > 0 ? ((winner.overallStrength / totalStrength) * 100).toFixed(1) : 50,
-                highlights: { highestPaid, stealPlayer, biggestSpender },
-            }
-        });
-
-        this.saveMatchHistory(teamScores, winner.team);
+            this.saveMatchHistory(teamScores, winner.team);
+        }, 3000); // 3 second suspense simulation
     };
 
 
@@ -297,145 +363,119 @@ class ResultsPage extends Component {
                 {/* Match Prediction Overlay */}
                 {matchPrediction && (
                     <div className="prediction-overlay" onClick={() => this.setState({ matchPrediction: null })}>
-                        <div className="prediction-card" onClick={e => e.stopPropagation()}>
-                            <h2 className="gradient-text text-3xl font-black text-center mb-6"> AI MATCH PREDICTION</h2>
-
-                            {/* VS Header */}
-                            <div className="prediction-vs">
-                                <div className="prediction-team">
-                                    <div className="prediction-team-name">{matchPrediction.teamScores[0]?.team.name}</div>
-                                    <div className="text-sm text-secondary">
-                                        {matchPrediction.teamScores[0]?.batsmen}B / {matchPrediction.teamScores[0]?.bowlers}BW / {matchPrediction.teamScores[0]?.allrounders}AR / {matchPrediction.teamScores[0]?.wk}WK
-                                    </div>
+                        <div className="prediction-card overflow-y-auto max-h-[90vh]" onClick={e => e.stopPropagation()}>
+                            <div className="flex justify-between items-start mb-6">
+                                <div className="text-left">
+                                    <div className="text-[10px] text-accent font-bold tracking-[0.2em] mb-1">MATCH RESULTS</div>
+                                    <h2 className="gradient-text text-3xl font-black">FANTASY SCOREBOARD</h2>
                                 </div>
-                                <div className="prediction-vs-text">VS</div>
-                                <div className="prediction-team">
-                                    <div className="prediction-team-name">{matchPrediction.teamScores[1]?.team.name}</div>
-                                    <div className="text-sm text-secondary">
-                                        {matchPrediction.teamScores[1]?.batsmen}B / {matchPrediction.teamScores[1]?.bowlers}BW / {matchPrediction.teamScores[1]?.allrounders}AR / {matchPrediction.teamScores[1]?.wk}WK
-                                    </div>
+                                <div className="text-right">
+                                     <div className="text-[10px] text-secondary font-bold tracking-[0.2em] mb-1">VENUE</div>
+                                     <div className="text-sm font-bold">APL Arena 2026</div>
                                 </div>
                             </div>
 
                             {/* Comparison Stats */}
-                            {[
-                                { label: 'Avg Rating', key: 'avgRating' },
-                                { label: 'Batting Power', key: 'battingPower' },
-                                { label: 'Bowling Power', key: 'bowlingPower' },
-                                { label: 'All-Round Depth', key: 'allRoundDepth' },
-                                { label: 'Balance Score', key: 'balanceScore' },
-                                { label: 'Avg Strike Rate', key: 'avgStrikeRate' },
-                                { label: 'Avg Economy', key: 'avgEconomy' },
-                                { label: 'Total Spend (Cr)', key: 'totalSpend' },
-                                { label: 'Fantasy Points ⭐', key: 'totalFantasyPoints' },
-                            ].map(stat => {
-                                const v1 = parseFloat(matchPrediction.teamScores[0]?.[stat.key] || 0);
-                                const v2 = parseFloat(matchPrediction.teamScores[1]?.[stat.key] || 0);
-                                const max = Math.max(v1, v2, 1);
-                                const isEcoReversed = stat.key === 'avgEconomy'; // lower is better
-                                const t1Better = isEcoReversed ? v1 < v2 : v1 > v2;
-
-                                return (
-                                    <div key={stat.key} className="prediction-stat-row">
-                                        <div className={`prediction-stat-value text-left ${t1Better ? 'text-accent' : 'text-secondary'}`}>
-                                            {matchPrediction.teamScores[0]?.[stat.key]}
-                                        </div>
-                                        <div className="prediction-stat-label">{stat.label}</div>
-                                        <div className={`prediction-stat-value text-right ${!t1Better ? 'text-success' : 'text-secondary'}`}>
-                                            {matchPrediction.teamScores[1]?.[stat.key]}
-                                        </div>
-                                    </div>
-                                );
-                            })}
-
-                            {/* Impact Players */}
-                            <div className="prediction-stat-row mt-4">
-                                <div className="prediction-stat-value text-left text-accent">
-                                    {matchPrediction.teamScores[0]?.impactPlayer?.name || 'None'}
-                                </div>
-                                <div className="prediction-stat-label">Impact Player</div>
-                                <div className="prediction-stat-value text-right text-success">
-                                    {matchPrediction.teamScores[1]?.impactPlayer?.name || 'None'}
-                                </div>
-                            </div>
-
-                            {/* Strengths & Weaknesses */}
-                            <div className="grid grid-cols-2 gap-4 mt-6 border-t border-white border-opacity-10 pt-6">
+                            <div className="space-y-3 mb-8">
                                 {matchPrediction.teamScores.map((ts, idx) => (
-                                    <div key={idx} className="text-left">
-                                        <div className="text-[10px] font-bold text-secondary uppercase tracking-widest mb-2">{ts.team.name} ANALYSIS</div>
-                                        <div className="mb-4">
-                                            {ts.strengths.map((s, i) => (
-                                                <div key={i} className="text-xs text-success mb-1">✅ {s}</div>
-                                            ))}
+                                    <div key={idx} className={`glass p-4 border-l-4 ${ts.team.id === matchPrediction.winner.id ? 'border-success' : 'border-danger'} flex justify-between items-center`}>
+                                        <div className="flex items-center gap-4">
+                                            <div className="text-2xl font-black text-secondary">#{idx + 1}</div>
+                                            <div>
+                                                <div className="font-black text-lg uppercase tracking-tight">{ts.team.name}</div>
+                                                <div className="text-xs text-secondary">{ts.batsmen}B / {ts.bowlers}BW / {ts.allrounders}AR</div>
+                                            </div>
                                         </div>
-                                        <div>
-                                            {ts.weaknesses.map((w, i) => (
-                                                <div key={i} className="text-xs text-danger mb-1">❌ {w}</div>
-                                            ))}
+                                        <div className="text-right">
+                                            <div className="text-[10px] font-bold text-secondary uppercase tracking-widest">Total Points</div>
+                                            <div className={`text-2xl font-black ${ts.team.id === matchPrediction.winner.id ? 'text-success' : 'text-white'}`}>{ts.totalFantasyPoints}</div>
                                         </div>
                                     </div>
                                 ))}
                             </div>
 
-                            {/* Auction Highlights */}
-                            {matchPrediction.highlights && (
-                                <div className="mt-8 mb-6 p-4 rounded-xl border border-accent border-opacity-30" style={{ background: 'rgba(212,175,55,0.05)' }}>
-                                    <h3 className="text-accent text-center text-xs font-bold tracking-widest uppercase mb-4"> Auction Highlights</h3>
-                                    <div className="grid grid-cols-3 gap-3 text-center">
-                                        {matchPrediction.highlights.highestPaid && (
+                            {/* MVP & Highlights */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                                <div className="glass p-6 bg-gradient-to-br from-accent/10 to-transparent border-accent/20">
+                                    <h3 className="text-accent text-xs font-black tracking-widest uppercase mb-4 flex items-center gap-2">
+                                        ⭐ MATCH MVP
+                                    </h3>
+                                    {matchPrediction.mvp && (
+                                        <div className="flex items-center gap-4">
+                                            <img src={matchPrediction.mvp.image} className="w-16 h-16 rounded-full border-2 border-accent object-cover" alt="" />
                                             <div>
-                                                <div className="text-2xl mb-1">💰</div>
-                                                <div className="text-[9px] text-secondary uppercase font-bold tracking-wider">Highest Paid</div>
-                                                <div className="text-sm font-black text-white">{matchPrediction.highlights.highestPaid.name}</div>
-                                                <div className="text-xs text-accent">{matchPrediction.highlights.highestPaid.soldPrice} Cr</div>
+                                                <div className="font-black text-lg leading-tight">{matchPrediction.mvp.name}</div>
+                                                <div className="text-xs text-secondary mb-2">{matchPrediction.mvp.role}</div>
+                                                <div className="text-xl font-black text-success">{matchPrediction.mvp.matchPoints} <span className="text-[10px] text-secondary">PTS</span></div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="glass p-6 bg-gradient-to-br from-success/10 to-transparent border-white/5">
+                                    <h3 className="text-secondary text-xs font-black tracking-widest uppercase mb-4 flex items-center gap-2">
+                                        🔥 AUCTION HIGHLIGHTS
+                                    </h3>
+                                    <div className="space-y-4">
+                                        {matchPrediction.highlights.stealPlayer && (
+                                            <div className="flex justify-between items-center text-sm">
+                                                <div className="text-secondary">Steal of Auction</div>
+                                                <div className="font-bold text-success">{matchPrediction.highlights.stealPlayer.name} ({matchPrediction.highlights.stealPlayer.soldPrice} Cr)</div>
                                             </div>
                                         )}
-                                        {matchPrediction.highlights.stealPlayer && (
-                                            <div>
-                                                <div className="text-2xl mb-1"></div>
-                                                <div className="text-[9px] text-secondary uppercase font-bold tracking-wider">Steal Buy</div>
-                                                <div className="text-sm font-black text-white">{matchPrediction.highlights.stealPlayer.name}</div>
-                                                <div className="text-xs text-success">{matchPrediction.highlights.stealPlayer.soldPrice} Cr</div>
+                                        {matchPrediction.highlights.highestPaid && (
+                                            <div className="flex justify-between items-center text-sm">
+                                                <div className="text-secondary">Highest Paid</div>
+                                                <div className="font-bold text-accent">{matchPrediction.highlights.highestPaid.name} ({matchPrediction.highlights.highestPaid.soldPrice} Cr)</div>
                                             </div>
                                         )}
                                         {matchPrediction.highlights.biggestSpender && (
-                                            <div>
-                                                <div className="text-2xl mb-1">🔥</div>
-                                                <div className="text-[9px] text-secondary uppercase font-bold tracking-wider">Top Spender</div>
-                                                <div className="text-sm font-black text-white">{matchPrediction.highlights.biggestSpender.name}</div>
-                                                <div className="text-xs text-primary">{Math.round(matchPrediction.highlights.biggestSpender.spent)} Cr</div>
+                                            <div className="flex justify-between items-center text-sm">
+                                                <div className="text-secondary">Biggest Spender</div>
+                                                <div className="font-bold">{matchPrediction.highlights.biggestSpender.name}</div>
                                             </div>
                                         )}
                                     </div>
                                 </div>
-                            )}
+                            </div>
 
-                            {/* Winner */}
-                            <div className={`prediction-winner ${matchPrediction.winner.id === teams[0]?.id ? 'prediction-winner--team1' : 'prediction-winner--team2'}`}>
-                                <div className="prediction-winner-label"> Predicted Winner</div>
-                                <div className={`prediction-winner-name ${matchPrediction.winner.id === teams[0]?.id ? 'text-accent' : 'text-success'}`}>
-                                    {matchPrediction.winner.name}
-                                </div>
-                                <div className="prediction-win-chance">
-                                    Win Probability: <strong>{matchPrediction.winChance}%</strong>
-                                </div>
+                            {/* Winner Reveal */}
+                            <div className="text-center p-8 glass bg-success/5 border-success/20 rounded-2xl mb-6 relative overflow-hidden">
+                                <div className="absolute top-0 left-0 w-full h-1 bg-success animate-pulse"></div>
+                                <div className="text-[10px] text-success font-black tracking-[0.4em] mb-2 uppercase">Champions of the Arena</div>
+                                <h1 className="text-4xl md:text-5xl font-black text-white uppercase tracking-tighter mb-2">{matchPrediction.winner.name}</h1>
+                                <div className="text-sm text-secondary italic">Victory determined by superior fantasy scoring and player performance.</div>
                             </div>
 
                             <div className="text-center mt-6">
-                                <button className="btn btn-outline px-10 py-3" onClick={() => this.setState({ matchPrediction: null })}>
-                                    Close
+                                <button className="btn btn-outline px-10 py-3 w-full" onClick={() => this.setState({ matchPrediction: null })}>
+                                    Back to Leaderboard
                                 </button>
                             </div>
                         </div>
                     </div>
                 )}
 
+                {/* Simulation Suspense Overlay */}
+                {this.state.simulating && (
+                    <div className="prediction-overlay">
+                        <div className="glass p-12 text-center max-w-lg w-full border-t-4 border-accent animate-pulse">
+                            <div className="text-6xl mb-6">🏏</div>
+                            <h2 className="gradient-text text-3xl font-black mb-4 tracking-widest">SIMULATING MATCH...</h2>
+                            <p className="text-secondary mb-8">Calculating fantasy points based on player ratings and roles.</p>
+                            <div className="w-full bg-dark h-2 rounded-full overflow-hidden mb-2">
+                                <div className="bg-accent h-full animate-loading-bar"></div>
+                            </div>
+                            <div className="text-[10px] text-accent tracking-[0.3em] font-bold">ANALYZING POWER-PLAYS & IMPACT SUBS</div>
+                        </div>
+                    </div>
+                )}
+
                 {/* Predict Button */}
-                {allTeamsReady && !matchPrediction && (
+                {allTeamsReady && !matchPrediction && !this.state.simulating && (
                     <div className="text-center mb-12 animate-fade-in">
-                        <button className="btn btn-primary px-10 py-4 text-lg animate-pulse" onClick={this.analyzeMatch}>
-                             Predict Match Winner
+                        <button className="btn btn-primary px-10 py-4 text-lg" onClick={this.analyzeMatch}>
+                             START MATCH SIMULATION
                         </button>
                     </div>
                 )}

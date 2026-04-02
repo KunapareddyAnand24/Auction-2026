@@ -746,6 +746,10 @@ class App extends Component {
         )}
         <nav className="navbar relative z-10 glass-nav">
           <div className="flex items-center gap-6">
+            <div className="flex items-center gap-3 cursor-pointer" onClick={this.goHome}>
+              <div className="logo-box">APL</div>
+              <div className="font-black text-2xl text-accent tracking-wide hidden md:block">AUCTION</div>
+            </div>
             <div className="flex gap-2">
               <button 
                 onClick={this.goBack} 
@@ -753,7 +757,7 @@ class App extends Component {
                 className="btn btn-outline px-3 py-2 disabled:opacity-30 border-0"
                 title="Go Back"
               >
-                ◀
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m15 18-6-6 6-6"/></svg>
               </button>
               <button 
                 onClick={this.goForward} 
@@ -761,19 +765,15 @@ class App extends Component {
                 className="btn btn-outline px-3 py-2 disabled:opacity-30 border-0"
                 title="Go Forward"
               >
-                ▶
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
               </button>
               <button 
                 onClick={this.goHome} 
                 className="btn btn-outline px-3 py-2 border-0"
                 title="Home"
               >
-                🏠
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
               </button>
-            </div>
-            <div className="flex items-center gap-3 cursor-pointer" onClick={this.goHome}>
-              <div className="logo-box">APL</div>
-              <div className="font-black text-2xl text-accent tracking-wide hidden md:block">AUCTION</div>
             </div>
           </div>
           {this.state.user && (
@@ -785,11 +785,6 @@ class App extends Component {
                 >
                   DASHBOARD
                 </button>
-              )}
-              {this.state.roomCode && (
-                <div className="glass px-4 py-2 text-sm font-bold flex items-center gap-2">
-                  ROOM: <span className="text-accent">{this.state.roomCode}</span>
-                </div>
               )}
               <button
                 className="btn btn-outline px-4 py-2 text-xs font-bold"
@@ -812,6 +807,13 @@ class App extends Component {
         <div className="p-8 flex-1 flex flex-col relative z-10">
           {this.renderView()}
         </div>
+        <footer className="w-full py-8 mt-auto text-center border-t border-white border-opacity-5 relative z-20">
+          <div className="text-[10px] tracking-[0.4em] text-secondary uppercase font-black opacity-30 hover:opacity-100 transition-all duration-700 flex items-center justify-center gap-4 group cursor-default">
+            <span className="w-12 h-[1px] bg-gradient-to-r from-transparent to-white/20 group-hover:to-accent/50 transition-all duration-700"></span>
+            MADE BY <span className="group-hover:text-accent transition-colors duration-700">KUNAPAREDDY SRI SAI PURNANAND</span>
+            <span className="w-12 h-[1px] bg-gradient-to-l from-transparent to-white/20 group-hover:to-accent/50 transition-all duration-700"></span>
+          </div>
+        </footer>
       </div>
     );
   }

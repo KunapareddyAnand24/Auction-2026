@@ -10,6 +10,7 @@ class RoomPage extends Component {
         hostTeamName: '',
         joinTeamName: '',
         maxTeams: 2,
+        targetPoolSize: 103, // Default for 2 teams
         isCreating: true,
     };
 
@@ -35,27 +36,45 @@ class RoomPage extends Component {
         let { maxTeams } = this.state;
         if (action === 'increment' && maxTeams < 8) maxTeams++;
         if (action === 'decrement' && maxTeams > 2) maxTeams--;
-        this.setState({ maxTeams });
+        
+        // Auto-adjust suggested pool size
+        const suggested = 71 + Math.min(106, maxTeams * 16);
+        this.setState({ maxTeams, targetPoolSize: suggested });
     };
 
-    // How many uncapped (tier-2) players to randomly add per set
-    getUncappedPerSet = (teamCount) => {
-        // More teams → more uncapped needed to pad out squads
-        return Math.min(13, Math.max(8, teamCount * 3));
+    handleTargetPoolSizeChange = (action) => {
+        let { targetPoolSize } = this.state;
+        const T1_COUNT = playersData.filter(p => p.tier === 1).length;
+        const TOTAL_COUNT = playersData.length;
+
+        if (action === 'increment' && targetPoolSize < TOTAL_COUNT) {
+            targetPoolSize = Math.min(TOTAL_COUNT, targetPoolSize + 10);
+        }
+        if (action === 'decrement' && targetPoolSize > T1_COUNT) {
+            targetPoolSize = Math.max(T1_COUNT, targetPoolSize - 10);
+        }
+        this.setState({ targetPoolSize });
     };
 
-    // Pool = ALL tier-1 + random subset of tier-2, set by set
-    buildSetOrderedPool = (uncappedPerSet) => {
+    // Pool = ALL tier-1 + random subset of tier-2 to reach target size
+    buildSetOrderedPool = (targetSize) => {
+        const t1Players = playersData.filter(p => p.tier === 1);
+        const t2Players = playersData.filter(p => p.tier === 2);
+        
+        const remainingNeeded = Math.max(0, targetSize - t1Players.length);
+        const selectedT2 = this.shuffleArray(t2Players).slice(0, remainingNeeded);
+        
+        const fullSelection = t1Players.concat(selectedT2);
+        
+        // Re-organize into sets to maintain auction flow
         const setNums = [1, 2, 3, 4];
-        let pool = [];
+        let orderedPool = [];
         setNums.forEach(s => {
-            const t1 = playersData.filter(p => p.set === s && p.tier === 1);
-            const t2 = this.shuffleArray(playersData.filter(p => p.set === s && p.tier === 2));
-            const picked = t2.slice(0, Math.min(uncappedPerSet, t2.length));
-            const setPlayers = this.shuffleArray(t1).concat(picked); // shuffle T1 within set, T2 random already
-            pool = pool.concat(setPlayers);
+            const playersInSet = fullSelection.filter(p => p.set === s);
+            orderedPool = orderedPool.concat(this.shuffleArray(playersInSet));
         });
-        return pool;
+        
+        return orderedPool;
     };
 
     handleCreateRoom = async () => {
@@ -74,8 +93,7 @@ class RoomPage extends Component {
         }
 
         try {
-            const uncappedPerSet = this.getUncappedPerSet(maxTeams);
-            const orderedPool = this.buildSetOrderedPool(uncappedPerSet);
+            const orderedPool = this.buildSetOrderedPool(this.state.targetPoolSize);
 
             const roomRef = ref(db, `rooms/${this.state.roomCode}`);
             await set(roomRef, {
@@ -158,12 +176,10 @@ class RoomPage extends Component {
     };
 
     render() {
-        const { isCreating, maxTeams, hostTeamName, joinCode, joinTeamName } = this.state;
+        const { isCreating, maxTeams, hostTeamName, joinCode, joinTeamName, targetPoolSize } = this.state;
         // Compute actual preview pool size
-        const t1Count = [1,2,3,4].reduce((acc, s) => acc + playersData.filter(p => p.set === s && p.tier === 1).length, 0);
-        const uncappedPerSet = this.getUncappedPerSet(maxTeams);
-        const t2Count = [1,2,3,4].reduce((acc, s) => acc + Math.min(uncappedPerSet, playersData.filter(p => p.set === s && p.tier === 2).length), 0);
-        const poolSize = t1Count + t2Count;
+        const t1Count = playersData.filter(p => p.tier === 1).length;
+        const poolSize = targetPoolSize;
 
         return (
             <div className="container animate-fade-in">
@@ -213,10 +229,27 @@ class RoomPage extends Component {
                                 </div>
                             </div>
 
+                            <div className="mb-6">
+                                <div className="flex justify-between items-center mb-2">
+                                    <label className="text-secondary text-[10px] uppercase font-black tracking-widest">Total Auction Pool Size</label>
+                                    <span className="text-accent font-black">{targetPoolSize} UP</span>
+                                </div>
+                                <div className="flex items-center justify-between glass px-4 py-2">
+                                    <button className="btn-outline px-4 py-1" onClick={() => this.handleTargetPoolSizeChange('decrement')}>-</button>
+                                    <div className="w-full mx-4 h-1 bg-white/5 rounded-full overflow-hidden relative">
+                                        <div 
+                                            className="absolute top-0 left-0 h-full bg-accent transition-all duration-300"
+                                            style={{ width: `${(targetPoolSize / playersData.length) * 100}%` }}
+                                        ></div>
+                                    </div>
+                                    <button className="btn-outline px-4 py-1" onClick={() => this.handleTargetPoolSizeChange('increment')}>+</button>
+                                </div>
+                            </div>
+
                             <div className="text-center mb-4">
                                 <div className="pool-indicator">
                                     <span className="pool-indicator-dot"></span>
-                                    {poolSize} Players · {t1Count} Recognized + {t2Count} Uncapped · 4 Sets
+                                    {targetPoolSize} Players · {t1Count} Star Recognized + {targetPoolSize - t1Count} Random Uncapped
                                 </div>
                             </div>
 

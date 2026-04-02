@@ -1541,6 +1541,37 @@ label {
   margin-bottom: 1rem;
 }
 
+/* ============================================
+   MATCH SIMULATION ANIMATIONS
+   ============================================ */
+@keyframes loadingBar {
+  0% { width: 0%; }
+  50% { width: 70%; }
+  100% { width: 100%; }
+}
+
+.animate-loading-bar {
+  animation: loadingBar 3s ease-in-out forwards;
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.animate-pulse-soft {
+  animation: pulse-soft 2s infinite ease-in-out;
+}
+
+/* Custom Gradients for Highlights */
+.bg-gradient-mvp {
+  background: linear-gradient(135deg, rgba(212, 175, 55, 0.1), rgba(0, 0, 0, 0));
+}
+
+.bg-gradient-highlight {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(0, 0, 0, 0));
+}
+
 .xi-counter {
   font-size: 1.1rem;
   font-weight: 800;
