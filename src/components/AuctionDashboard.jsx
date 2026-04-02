@@ -1,4 +1,5 @@
-﻿import React, { Component } from 'react';
+import React, { Component } from 'react';
+import { createPortal } from 'react-dom';
 import { db } from '../firebase';
 import { ref, update, onValue, runTransaction, push } from 'firebase/database';
 import { PLAYER_SETS } from '../data/playersData';
@@ -1035,7 +1036,7 @@ class AuctionDashboard extends Component {
                     </div>
 
                     {/* RIGHT: Teams Purse + Sold Timeline */}
-                    <div className="glass p-6 mobile-order-3 flex flex-col gap-4 overflow-y-auto overflow-x-hidden" style={{ height: '100%', maxHeight: '88vh' }}>
+                    <div className="glass p-6 mobile-order-3 flex flex-col gap-4 overflow-y-auto overflow-x-hidden" style={{ height: '100%', maxHeight: '88vh', paddingBottom: '160px' }}>
                         <h3 className="text-center text-accent tracking-widest font-bold text-lg flex items-center justify-center gap-3 sticky top-0 pb-2 z-10" style={{ background: 'rgba(10,15,28,0.95)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
                             TEAMS
                             {unsoldPlayers.length > 0 && (
@@ -1080,27 +1081,28 @@ class AuctionDashboard extends Component {
                                 );
                             })}
                         </div>
-                        {soldTimeline.length > 0 && (
-                        <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: '#050508', padding: '10px 0', borderTop: '2px solid #d4af37', zIndex: 100, boxShadow: '0 -4px 15px rgba(0,0,0,0.5)' }}>
-                            <marquee loop="-1" scrollamount="8" style={{ color: 'white', fontWeight: 'bold', fontSize: '1.2rem', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                            <div style={{ display: 'flex', gap: '50px' }}>
-                                {soldTimeline.map((entry, i) => {
-                                    const entryTeam = teams.find(t => t.name === entry.teamName);
-                                    const isMyTeam = entryTeam && entryTeam.id === this.props.myTeamId;
-                                    const isStealEntry = entry.soldPrice <= (entry.basePrice || 0) * 1.25 && entry.rating >= 80;
-                                    return (
-                                    <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-                                        <span style={{ color: '#d4af37' }}></span> {entry.name || entry.playerName} sold to <span style={{ color: isMyTeam ? '#d4af37' : '#22c55e' }}>{entry.teamName}</span> for <span style={{ color: '#d4af37' }}>{entry.soldPrice || entry.price} Cr</span> {isStealEntry || entry.isSteal ? <span style={{ color: '#22c55e' }}> (STEAL)</span> : ''}
-                                    </span>
-                                    );
-                                })}
-                            </div>
-                            </marquee>
-                        </div>
-                        )}
-
                     </div>
                 </div>
+
+                {soldTimeline.length > 0 && createPortal(
+                <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: '#050508', padding: '10px 0', borderTop: '2px solid #d4af37', zIndex: 10000, boxShadow: '0 -4px 15px rgba(0,0,0,0.5)' }}>
+                    <marquee loop="-1" scrollamount="8" style={{ color: 'white', fontWeight: 'bold', fontSize: '1.2rem', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                    <div style={{ display: 'flex', gap: '50px' }}>
+                        {soldTimeline.map((entry, i) => {
+                            const entryTeam = teams.find(t => t.name === entry.teamName);
+                            const isMyTeam = entryTeam && entryTeam.id === this.props.myTeamId;
+                            const isStealEntry = entry.soldPrice <= (entry.basePrice || 0) * 1.25 && entry.rating >= 80;
+                            return (
+                            <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ color: '#d4af37' }}></span> {entry.name || entry.playerName} sold to <span style={{ color: isMyTeam ? '#d4af37' : '#22c55e' }}>{entry.teamName}</span> for <span style={{ color: '#d4af37' }}>{entry.soldPrice || entry.price} Cr</span> {isStealEntry || entry.isSteal ? <span style={{ color: '#22c55e' }}> (STEAL)</span> : ''}
+                            </span>
+                            );
+                        })}
+                    </div>
+                    </marquee>
+                </div>,
+                document.body
+                )}
 
                 {/* ── Floating Sidebar (Chat & Voice) ── */}
                 <div className="floating-sidebar">

@@ -382,6 +382,8 @@ class App extends Component {
       myTeamId: null,
       isHost: false,
       gameMode: null, // 'computer', 'multiplayer', 'quick'
+      history: ['landing'],
+      historyIndex: 0,
     };
     this.roomListener = null;
     this.authListener = null;
@@ -491,7 +493,37 @@ class App extends Component {
     });
   };
 
-  setView = (view) => this.setState({ view });
+  setView = (view) => {
+    this.setState((prevState) => {
+      if (prevState.view === view) return null;
+      
+      const newHistory = prevState.history.slice(0, prevState.historyIndex + 1);
+      newHistory.push(view);
+      return { 
+        view, 
+        history: newHistory,
+        historyIndex: newHistory.length - 1
+      };
+    });
+  };
+
+  goBack = () => {
+    if (this.state.historyIndex > 0) {
+      const idx = this.state.historyIndex - 1;
+      this.setState({ historyIndex: idx, view: this.state.history[idx] });
+    }
+  }
+
+  goForward = () => {
+    if (this.state.historyIndex < this.state.history.length - 1) {
+      const idx = this.state.historyIndex + 1;
+      this.setState({ historyIndex: idx, view: this.state.history[idx] });
+    }
+  }
+
+  goHome = () => {
+    this.setView(this.state.user ? 'modeSelect' : 'landing');
+  }
   setUser = (user) => this.setState({ user });
   setRoomCode = (code) => this.setState({ roomCode: code });
   setTeams = (teams) => this.setState({ teams });
@@ -713,9 +745,36 @@ class App extends Component {
           <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', zIndex: 0, opacity: 0.2, pointerEvents: 'none', backgroundImage: 'url(/ipl.png)', backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }}></div>
         )}
         <nav className="navbar relative z-10 glass-nav">
-          <div className="flex items-center gap-3 cursor-pointer" onClick={() => this.setView(this.state.user ? 'modeSelect' : 'landing')}>
-            <div className="logo-box">APL</div>
-            <div className="font-black text-2xl text-accent tracking-wide">AUCTION</div>
+          <div className="flex items-center gap-6">
+            <div className="flex gap-2">
+              <button 
+                onClick={this.goBack} 
+                disabled={this.state.historyIndex === 0}
+                className="btn btn-outline px-3 py-2 disabled:opacity-30 border-0"
+                title="Go Back"
+              >
+                ◀
+              </button>
+              <button 
+                onClick={this.goForward} 
+                disabled={this.state.historyIndex >= this.state.history.length - 1}
+                className="btn btn-outline px-3 py-2 disabled:opacity-30 border-0"
+                title="Go Forward"
+              >
+                ▶
+              </button>
+              <button 
+                onClick={this.goHome} 
+                className="btn btn-outline px-3 py-2 border-0"
+                title="Home"
+              >
+                🏠
+              </button>
+            </div>
+            <div className="flex items-center gap-3 cursor-pointer" onClick={this.goHome}>
+              <div className="logo-box">APL</div>
+              <div className="font-black text-2xl text-accent tracking-wide hidden md:block">AUCTION</div>
+            </div>
           </div>
           {this.state.user && (
             <div className="flex items-center gap-6">

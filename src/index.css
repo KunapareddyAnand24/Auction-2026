@@ -2960,7 +2960,7 @@ label {
    ============================================ */
 .floating-sidebar {
   position: fixed;
-  bottom: 20px;
+  bottom: 70px;
   right: 20px;
   width: 320px;
   z-index: 1000;

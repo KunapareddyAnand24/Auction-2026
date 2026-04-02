@@ -1,4 +1,5 @@
-﻿import React, { Component } from 'react';
+import React, { Component } from 'react';
+import { createPortal } from 'react-dom';
 import playersData from '../data/playersData';
 
 const AI_TEAM_NAMES = ['Mumbai Indians', 'Delhi Capitals', 'Kolkata Knight Riders', 'Rajasthan Royals', 'Gujarat Titans', 'Lucknow Super Giants', 'Punjab Kings', 'Sunrisers Hyderabad'];
@@ -27,9 +28,11 @@ Should you bid? Reply ONLY with a valid raw JSON object. NO markdown, NO formatt
         generationConfig: { temperature: 0.1, maxOutputTokens: 60 }
       })
     });
+    if (!res.ok) return null;
     const data = await res.json();
     let text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    if (!text) return null;
+    text = text.replace(/```json/gi, '').replace(/```/g, '').trim();
     if (text.startsWith('{') && text.endsWith('}')) {
       return JSON.parse(text);
     }
@@ -37,7 +40,7 @@ Should you bid? Reply ONLY with a valid raw JSON object. NO markdown, NO formatt
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0]);
     }
-    return { bid: false, reason: 'Parse error' };
+    return null;
   } catch (e) {
     return null; // fallback to heuristic
   }
@@ -226,7 +229,7 @@ class ComputerAuction extends Component {
     this.aiTimeout = setTimeout(() => this.aiDecideBid(), delay);
   };
 
-  aiDecideBid = async () => {
+  aiDecideBid = () => {
     const { aiTeam, currentBid, highestBidderId, timer, status, players, currentPlayerIndex } = this.state;
     if (status !== 'active' || timer <= 0) return;
     if (highestBidderId === aiTeam.id) return;
@@ -239,43 +242,34 @@ class ComputerAuction extends Component {
     if (aiPlayersCount >= 18) return;
     if (aiTeam.purse < newBid) return;
 
-    const maxWillingPrice = Math.ceil(player.basePrice * (player.rating / 50));
+    this.setState({ aiThinking: true, aiThinkingText: ' AI is calculating bid...' });
 
-    this.setState({ aiThinking: true, aiThinkingText: ' AI is thinking' });
+    // The AI's maximum limit for a player is based on their rating and AI's current purse.
+    // Highly rated players get a bigger multiplier.
+    const ratingMultiplier = player.rating >= 90 ? 2.5 : (player.rating >= 80 ? 1.5 : (player.rating >= 70 ? 1.0 : 0.6));
+    let maxWillingPrice = Math.floor(player.basePrice * ratingMultiplier);
 
-    // Try Gemini AI first
-    let shouldBid = null;
-    if (GEMINI_API_KEY && !GEMINI_API_KEY.includes('placeholder')) {
-      this.setState({ aiThinkingText: ' Consulting Gemini AI...' });
-      const decision = await askGeminiToBid({
-        playerName: player.name,
-        role: player.role,
-        rating: player.rating,
-        stats: player.stats,
-        currentBid: newBid,
-        aiPurse: aiTeam.purse,
-        aiSquadCount: aiPlayersCount,
-        maxBid: maxWillingPrice,
-      });
-      if (decision !== null) {
-        shouldBid = decision.bid;
-        if (decision.reason) {
-          this.setState({ aiThinkingText: ` ${decision.reason.substring(0, 40)}...` });
-        }
-      }
+    // If AI has a lot of money and the player is top tier, it might push even higher
+    if (aiTeam.purse > 50 && player.rating >= 85) {
+        maxWillingPrice += 3;
     }
 
-    // Fallback heuristic if Gemini unavailable
-    if (shouldBid === null) {
-      if (newBid > maxWillingPrice) { this.setState({ aiThinking: false }); return; }
-      const bidChance = Math.min(0.95, (player.rating - 60) / 40 + 0.2);
-      const budgetFactor = aiTeam.purse > 30 ? 1 : (aiTeam.purse > 15 ? 0.6 : 0.3);
-      shouldBid = Math.random() <= bidChance * budgetFactor;
+    let shouldBid = false;
+
+    if (newBid > maxWillingPrice) {
+      // AI won't overpay its max limit
+      shouldBid = false;
+    } else if (newBid <= maxWillingPrice * 0.7) {
+      // AI bids 100% of the time if it's very cheap compared to its max
+      shouldBid = true;
+    } else {
+      // AI occasionally hesitates when getting close to its limit
+      shouldBid = Math.random() <= 0.8; // 80% chance to keep bidding
     }
 
     if (!shouldBid) {
       this.setState({ aiThinking: false });
-      return; // Do not schedule another checking bid if price hasn't increased!
+      return; 
     }
 
     if (newBid > maxWillingPrice && shouldBid === null) {
@@ -533,6 +527,7 @@ class ComputerAuction extends Component {
     const isUserLeading = highestBidderId === userTeam.id;
 
     return (
+      <>
       <div className="auction-grid animate-fade-in">
         {/* Re-Auction Round Banner */}
         {isReAuction && (
@@ -760,7 +755,7 @@ class ComputerAuction extends Component {
         </div>
 
         {/* Right: Teams + Bought Players Scrollable */}
-        <div className="glass p-6 scrollable-panel mobile-order-3 flex flex-col gap-4 overflow-y-auto" style={{ height: '100%', maxHeight: '85vh' }}>
+        <div className="glass p-6 scrollable-panel mobile-order-3 flex flex-col gap-4 overflow-y-auto" style={{ height: '100%', maxHeight: '85vh', paddingBottom: '160px' }}>
           <h3 className="text-center text-accent tracking-widest font-bold text-lg flex items-center justify-center gap-3 sticky top-0 z-10 pb-2" style={{ background: 'inherit', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
             TEAMS PURSE
             {unsoldPlayersPool.length > 0 && (
@@ -805,22 +800,24 @@ class ComputerAuction extends Component {
             })}
           </div>
         </div>
-
-        {/* Scrolling Broadcast Ticker */}
-        {soldTimeline.length > 0 && (
-          <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: '#050508', padding: '10px 0', borderTop: '2px solid #d4af37', zIndex: 100, boxShadow: '0 -4px 15px rgba(0,0,0,0.5)' }}>
-            <marquee loop="-1" scrollamount="8" style={{ color: 'white', fontWeight: 'bold', fontSize: '1.2rem', textTransform: 'uppercase', letterSpacing: '1px' }}>
-              <div style={{ display: 'flex', gap: '50px' }}>
-                {soldTimeline.map((entry, i) => (
-                  <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
-                     {entry.playerName} sold to <span style={{ color: entry.teamId === 1 ? '#d4af37' : '#22c55e' }}>{entry.teamName}</span> for <span style={{ color: '#d4af37' }}>{entry.price} Cr</span> {entry.isSteal ? <span style={{ color: '#22c55e' }}>(STEAL)</span> : ''}
-                  </span>
-                ))}
-              </div>
-            </marquee>
-          </div>
-        )}
       </div>
+
+      {/* Scrolling Broadcast Ticker via Portal */}
+      {soldTimeline.length > 0 && createPortal(
+        <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: '#050508', padding: '10px 0', borderTop: '2px solid #d4af37', zIndex: 10000, boxShadow: '0 -4px 15px rgba(0,0,0,0.5)' }}>
+          <marquee loop="-1" scrollamount="8" style={{ color: 'white', fontWeight: 'bold', fontSize: '1.2rem', textTransform: 'uppercase', letterSpacing: '1px' }}>
+            <div style={{ display: 'flex', gap: '50px' }}>
+              {soldTimeline.map((entry, i) => (
+                <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                   {entry.playerName} sold to <span style={{ color: entry.teamId === 1 ? '#d4af37' : '#22c55e' }}>{entry.teamName}</span> for <span style={{ color: '#d4af37' }}>{entry.price} Cr</span> {entry.isSteal ? <span style={{ color: '#22c55e' }}>(STEAL)</span> : ''}
+                </span>
+              ))}
+            </div>
+          </marquee>
+        </div>,
+        document.body
+      )}
+      </>
     );
   }
 }
