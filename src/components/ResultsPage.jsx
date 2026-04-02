@@ -58,6 +58,15 @@ class ResultsPage extends Component {
     componentDidMount() {
         if (db && this.props.roomCode) {
             this.listenToRoom();
+        } else if (this.props.teams) {
+            // Support for non-Firebase (offline/computer) games
+            this.setState({
+                roomData: {
+                    teams: this.props.teams,
+                    selections: {}, // Will be populated as user picks
+                    status: 'finished'
+                }
+            });
         }
     }
 
@@ -115,9 +124,13 @@ class ResultsPage extends Component {
             }
         }
 
-        // Sync to Firebase
-        const selectionRef = ref(db, `rooms/${this.props.roomCode}/selections/${this.props.myTeamId}`);
-        update(selectionRef, sel);
+        // Sync to Firebase if room exists
+        if (this.props.roomCode) {
+            const selectionRef = ref(db, `rooms/${this.props.roomCode}/selections/${this.props.myTeamId}`);
+            update(selectionRef, sel);
+        } else {
+            // Otherwise just keep it in local state (RoomPage handles it)
+        }
     };
 
     confirmSelection = () => {
@@ -131,8 +144,27 @@ class ResultsPage extends Component {
             return;
         }
 
-        const selectionRef = ref(db, `rooms/${this.props.roomCode}/selections/${this.props.myTeamId}`);
-        update(selectionRef, { ...mySelection, ready: true });
+        if (this.props.roomCode) {
+            const selectionRef = ref(db, `rooms/${this.props.roomCode}/selections/${this.props.myTeamId}`);
+            update(selectionRef, { ...mySelection, ready: true });
+        } else {
+            // Local path (Computer Auction)
+            this.setState(prev => {
+                const teams = prev.roomData.teams;
+                // Auto-pick XI for AI to proceed
+                const aiXI = (teams[1].players || []).slice(0, 11).map(p => p.id);
+                return {
+                    roomData: {
+                        ...prev.roomData,
+                        selections: {
+                            ...prev.roomData.selections,
+                            [this.props.myTeamId]: { ...mySelection, ready: true },
+                            2: { xi: aiXI, impact: [aiXI[0]], ready: true }
+                        }
+                    }
+                };
+            });
+        }
     };
 
     // Realistic Match Simulation based on RTG
@@ -321,7 +353,7 @@ class ResultsPage extends Component {
         
         const myTeamScore = teamScores.find(ts => ts.team.id === this.props.myTeamId);
         const opponentScore = teamScores.find(ts => ts.team.id !== this.props.myTeamId);
-        const mySelection = this.state.roomData.selections[this.props.myTeamId];
+        const mySelection = this.state.roomData.selections[this.props.myTeamId] || this.state.mySelection;
 
         if (!myTeamScore) return;
 

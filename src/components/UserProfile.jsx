@@ -1,4 +1,4 @@
-﻿import React, { Component } from 'react';
+import React, { Component } from 'react';
 import { firestore, auth } from '../firebase';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 
@@ -23,21 +23,24 @@ class UserProfile extends Component {
         if (!auth.currentUser) return;
         
         try {
+            // Simplified query to avoid index errors in Firestore
             const q = query(
                 collection(firestore, "matchHistory"),
-                where("userId", "==", auth.currentUser.uid),
-                orderBy("timestamp", "desc")
+                where("userId", "==", auth.currentUser.uid)
             );
             
             const querySnapshot = await getDocs(q);
-            const history = [];
+            let history = [];
             let won = 0;
             
             querySnapshot.forEach((doc) => {
                 const data = doc.data();
-                history.push(data);
+                history.push({ ...data, id: doc.id });
                 if (data.isWinner) won++;
             });
+
+            // Sort by timestamp descending in memory
+            history.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
 
             const uniqueTeams = [...new Set(history.map(m => m.teamName))];
             const winPercentage = history.length > 0 ? Math.round((won / history.length) * 100) : 0;

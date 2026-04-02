@@ -1,4 +1,4 @@
-﻿import React, { Component } from 'react';
+import React, { Component } from 'react';
 
 const FANTASY_RULES = [
   {
@@ -138,7 +138,15 @@ class ModeSelector extends Component {
     return (
       <div className="animate-fade-in" style={{ paddingBottom: '4rem' }}>
         {/* ── Mode Selection ── */}
-        <div className="container" style={{ minHeight: '80vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+        <div className="container" style={{ minHeight: '80vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', paddingTop: '2rem' }}>
+          {/* Top Scroll hint as requested */}
+          <div style={{ marginBottom: '2rem', textAlign: 'center', opacity: 0.7 }} className="animate-fade-in">
+            <div style={{ fontSize: '0.75rem', letterSpacing: '0.2em', textTransform: 'uppercase', color: '#d4af37', fontWeight: 'bold', marginBottom: '8px' }}>Essential Info</div>
+            <div style={{ fontSize: '0.85rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#888', display: 'flex', itemsCenter: 'center', gap: '8px', justifyContent: 'center' }}>
+              SCROLL FOR RULES & POINTS <span style={{ animation: 'bounce 1.5s infinite' }}>↓</span>
+            </div>
+          </div>
+
           <h1 className="gradient-text text-5xl mb-4 font-black tracking-tight text-center">
             CHOOSE YOUR MODE
           </h1>
@@ -186,11 +194,6 @@ class ModeSelector extends Component {
             </div>
           </div>
 
-          {/* Scroll hint */}
-          <div style={{ marginTop: '3rem', textAlign: 'center', opacity: 0.5 }}>
-            <div style={{ fontSize: '1.5rem', animation: 'bounce 1.5s infinite' }}>↓</div>
-            <div style={{ fontSize: '0.75rem', letterSpacing: '0.2em', textTransform: 'uppercase', color: '#888' }}>Scroll for Rules &amp; Points</div>
-          </div>
         </div>
 
         {/* ── Rules & Instructions Section ── */}

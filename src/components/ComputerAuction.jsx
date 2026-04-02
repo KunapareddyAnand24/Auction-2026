@@ -513,8 +513,15 @@ class ComputerAuction extends Component {
               </div>
             ))}
           </div>
-          <div className="text-center">
-            <button className="btn btn-primary px-10 py-4 text-lg" onClick={() => this.props.setView('modeSelect')}>
+          <div className="flex flex-col md:flex-row gap-4 justify-center mt-8">
+            <button className="btn btn-primary px-10 py-4 text-lg font-black tracking-widest shadow-lg shadow-accent/20" onClick={() => {
+                this.props.setTeams([userTeam, aiTeam]);
+                this.props.setMyTeamId(userTeam.id);
+                this.props.setView('selection');
+            }}>
+               PROCEED TO MATCH SIMULATION
+            </button>
+            <button className="btn btn-outline px-10 py-4 text-lg" onClick={() => this.props.setView('modeSelect')}>
               Return to Menu
             </button>
           </div>
