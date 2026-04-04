@@ -138,7 +138,7 @@ class ModeSelector extends Component {
     return (
       <div className="animate-fade-in" style={{ paddingBottom: '4rem' }}>
         {/* ── Mode Selection ── */}
-        <div className="container" style={{ minHeight: '80vh', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', paddingTop: '2rem' }}>
+        <div className="container flex flex-col justify-center items-center pt-8 md:pt-16 min-h-[60vh] md:min-h-[80vh]">
           {/* Top Scroll hint as requested */}
           <div style={{ marginBottom: '2rem', textAlign: 'center', opacity: 0.7 }} className="animate-fade-in">
             <div style={{ fontSize: '0.75rem', letterSpacing: '0.2em', textTransform: 'uppercase', color: '#d4af37', fontWeight: 'bold', marginBottom: '8px' }}>Essential Info</div>
@@ -197,20 +197,12 @@ class ModeSelector extends Component {
         </div>
 
         {/* ── Rules & Instructions Section ── */}
-        <div style={{
-          borderTop: '1px solid rgba(255,255,255,0.08)',
-          padding: '4rem 1rem',
-          background: 'rgba(0,0,0,0.3)',
-        }}>
+        <div className="border-t border-glass-border py-8 px-4 md:py-16 md:px-0 bg-dark/30">
           <div className="container" style={{ maxWidth: '900px' }}>
 
             {/* Auction Rules */}
             <div style={{ marginBottom: '4rem' }}>
-              <h2 style={{
-                fontSize: '2rem', fontWeight: 900, textAlign: 'center', marginBottom: '2rem',
-                background: 'linear-gradient(135deg, #d4af37, #4fc3f7)',
-                WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent'
-              }}>
+              <h2 className="text-2xl md:text-3xl font-black text-center mb-8 bg-gradient-to-r from-accent to-secondary bg-clip-text text-transparent uppercase tracking-wider">
                 🏟 AUCTION RULES
               </h2>
               <div style={{ display: 'grid', gap: '1rem', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>

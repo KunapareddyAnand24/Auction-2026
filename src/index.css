@@ -39,6 +39,8 @@ body {
     radial-gradient(circle at 50% 50%, rgba(0, 82, 155, 0.1) 0%, transparent 60%);
   background-attachment: fixed;
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 #root {
@@ -292,19 +294,19 @@ h6 {
 }
 
 .text-3xl {
-  font-size: 2rem;
+  font-size: clamp(1.5rem, 5vw, 2rem);
 }
 
 .text-4xl {
-  font-size: 2.5rem;
+  font-size: clamp(1.75rem, 6vw, 2.5rem);
 }
 
 .text-5xl {
-  font-size: 3.5rem;
+  font-size: clamp(2rem, 8vw, 3.5rem);
 }
 
 .text-6xl {
-  font-size: 5rem;
+  font-size: clamp(2.5rem, 10vw, 5rem);
 }
 
 .tracking-tight {
@@ -370,7 +372,13 @@ label {
   width: 100%;
   max-width: 1200px;
   margin: 0 auto;
-  padding: 2rem;
+  padding: 2rem 1rem;
+}
+
+@media (min-width: 768px) {
+  .container {
+    padding: 2rem;
+  }
 }
 
 .container-sm {
@@ -476,7 +484,15 @@ label {
 }
 
 .grid-cols-auto-fill {
-  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+
+@media (max-width: 768px) {
+  .grid-cols-2, .grid-cols-3, .grid-cols-4 {
+    grid-template-columns: repeat(1, minmax(0, 1fr));
+  }
+  
+  .md\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .col-span-2 {
@@ -787,16 +803,23 @@ label {
 }
 
 .navbar {
-  padding: 1.2rem 2.5rem;
+  padding: 0.8rem 1rem;
   border-bottom: 1px solid var(--glass-border);
   display: flex;
   justify-content: space-between;
   align-items: center;
   background: rgba(5, 5, 8, 0.8);
   backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   position: sticky;
   top: 0;
   z-index: 1000;
+}
+
+@media (min-width: 768px) {
+  .navbar {
+    padding: 1.2rem 2.5rem;
+  }
 }
 
 /* Computer Bid Popups */
@@ -869,10 +892,28 @@ label {
 
 .auction-grid {
   display: grid;
-  grid-template-columns: 320px 1fr 320px;
-  gap: 2rem;
-  min-height: calc(100vh - 120px);
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+  min-height: calc(100vh - 80px);
   height: auto;
+}
+
+@media (min-width: 1024px) {
+  .auction-grid {
+    grid-template-columns: 320px 1fr 320px;
+    gap: 2rem;
+    min-height: calc(100vh - 120px);
+  }
+}
+
+.mobile-order-1 { order: 1; }
+.mobile-order-2 { order: 2; }
+.mobile-order-3 { order: 3; }
+
+@media (max-width: 1023px) {
+  .mobile-order-1 { order: 1; } /* Bid Control */
+  .mobile-order-2 { order: 2; } /* Player Card */
+  .mobile-order-3 { order: 3; } /* Team Status */
 }
 
 .scrollable-panel {
@@ -902,10 +943,25 @@ label {
    ============================ */
 .mode-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 2rem;
-  max-width: 900px;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+  width: 100%;
+  max-width: 400px;
   margin: 0 auto;
+}
+
+@media (min-width: 768px) {
+  .mode-grid {
+    grid-template-columns: repeat(2, 1fr);
+    max-width: 700px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .mode-grid {
+    grid-template-columns: repeat(3, 1fr);
+    max-width: 900px;
+  }
 }
 
 .mode-card {
@@ -1329,14 +1385,21 @@ label {
   background: linear-gradient(145deg, rgba(15, 20, 35, 0.95), rgba(25, 30, 50, 0.95));
   border: 2px solid var(--secondary-color);
   border-radius: 24px;
-  padding: 3rem 2.5rem;
+  padding: 2rem 1.5rem;
   text-align: center;
   max-width: 480px;
-  width: 90%;
+  width: 95%;
   position: relative;
   overflow: hidden;
   animation: soldBounce 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
   box-shadow: 0 0 60px rgba(212, 175, 55, 0.3), 0 0 120px rgba(212, 175, 55, 0.1);
+}
+
+@media (min-width: 768px) {
+  .sold-card {
+    padding: 3rem 2.5rem;
+    width: 90%;
+  }
 }
 
 .sold-card::before {
@@ -1471,13 +1534,21 @@ label {
   color: var(--secondary-color);
   font-family: 'Inter', sans-serif;
   width: 100%;
-  padding: 20px;
-  font-size: 2.5rem;
+  padding: 15px;
+  font-size: 1.5rem;
   font-weight: 900;
   text-align: center;
-  letter-spacing: 12px;
+  letter-spacing: 8px;
   transition: all 0.3s ease;
   outline: none;
+}
+
+@media (min-width: 768px) {
+  .otp-input {
+    padding: 20px;
+    font-size: 2.5rem;
+    letter-spacing: 12px;
+  }
 }
 
 .otp-input:focus {
@@ -1848,14 +1919,15 @@ label {
     padding: 1.5rem;
   }
 
-  /* Auction Mobile App Layout (100dvh No-Scroll) */
+  /* Auction Mobile App Layout - Allow natural scrolling */
   body, html {
-    height: 100dvh;
-    overflow: hidden !important;
-    touch-action: pan-x pan-y;
+    height: auto;
+    min-height: 100%;
+    overflow-x: hidden !important;
+    touch-action: auto;
   }
   .app-container, #root {
-    height: 100%;
+    min-height: 100vh;
   }
   .container {
     height: 100%;

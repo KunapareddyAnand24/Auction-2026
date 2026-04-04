@@ -796,7 +796,7 @@ class App extends Component {
               >
                 PROFILE
               </button>
-              <div className="text-secondary text-sm hidden" style={{ display: window.innerWidth > 768 ? 'block' : 'none' }}>
+              <div className="text-secondary text-sm hidden md:block">
                 Manager: <span className="text-accent font-bold">{this.state.user}</span>
               </div>
               <button
